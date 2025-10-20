@@ -1,0 +1,30 @@
+name: Feature Branch
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: microsoft
+          java-version: '17'
+
+      - name: Maven Package
+        run: mvn -B clean package
+        working-directory: src
+
+      - name: Maven Verify
+        run: mvn -B verify
+        working-directory: src
