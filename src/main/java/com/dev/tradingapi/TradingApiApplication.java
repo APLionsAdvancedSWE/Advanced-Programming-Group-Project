@@ -6,6 +6,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 /**
  * This class contains the startup of the application.
  */
+@SuppressWarnings("PMD.UseUtilityClass")
 @SpringBootApplication
 public class TradingApiApplication {
 

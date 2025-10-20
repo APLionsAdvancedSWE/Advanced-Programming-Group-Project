@@ -23,8 +23,6 @@ jobs:
 
       - name: Maven Package
         run: mvn -B clean package
-        working-directory: src
 
       - name: Maven Verify
         run: mvn -B verify
-        working-directory: src
