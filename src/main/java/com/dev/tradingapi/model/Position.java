@@ -98,7 +98,7 @@ public class Position {
     if (qty + fillQty != 0) {
       BigDecimal totalCostBefore = avgCost.multiply(BigDecimal.valueOf(qty));
       BigDecimal totalCostNew = fillPrice.multiply(BigDecimal.valueOf(fillQty));
-      BigDecimal newAvgCost = (totalCostBefore.add(totalCostNew))
+      BigDecimal newAvgCost = totalCostBefore.add(totalCostNew)
               .divide(BigDecimal.valueOf(qty + fillQty), BigDecimal.ROUND_HALF_UP);
       this.avgCost = newAvgCost;
     }
