@@ -460,10 +460,13 @@ public class MarketService {
   }
 
   /**
-   * Returns the index of the last quote whose timestamp is less than or equal to the target.
-   * If all quotes are after the target, returns 0.
+   * <p>Returns the index of the last quote whose timestamp
+   * is less than or equal to the target.
+   * If all quotes are after the target, returns 0.</p>
    *
-   * Used to align simulation pointers to the previous valid bar (e.g., last trading minute before close).
+   * <p>Used to align simulation pointers to
+   * the previous valid bar
+   * (e.g., last trading minute before close).</p>
    *
    * @param list sorted list of quotes
    * @param target target timestamp
@@ -559,7 +562,8 @@ public class MarketService {
           LocalDate nyDate = q.getTs().atZone(NY_ZONE).toLocalDate();
           LocalDate prev = lastPrintedNyDate.put(symbol, nyDate);
           if (prev != null && !prev.equals(nyDate)) {
-            System.out.println("---- " + symbol + " rolling to next trading day: " + nyDate + " ----");
+            System.out.println("---- " + symbol
+                    + " rolling to next trading day: " + nyDate + " ----");
           }
 
           System.out.println("Sim update: " + symbol + " -> " + q);
@@ -571,7 +575,7 @@ public class MarketService {
         System.out.println("Simulation finished; no more quotes for all symbols.");
         simTask.cancel(false);
       }
-    }, 0, 1, TimeUnit.SECONDS);
+    }, 0, 1, TimeUnit.MINUTES);
   }
 
   /**
