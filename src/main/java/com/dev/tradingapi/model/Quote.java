@@ -116,7 +116,9 @@ public class Quote {
 
   @Override
   public String toString() {
-    return String.format("Quote[%s | open=%s, high=%s, low=%s, close=%s, vol=%d]",
-            symbol, open, high, low, close, volume);
+    return String.format(
+            "Quote[%s | open=%.4f, high=%.4f, low=%.4f, close=%.4f, vol=%d, ts=%s]",
+            symbol, open, high, low, close, volume, ts
+    );
   }
 }
