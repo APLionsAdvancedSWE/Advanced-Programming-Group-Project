@@ -111,6 +111,7 @@ public class Quote {
     return ts;
   }
 
+
   /**
    * Calculates an "average" price for convenience.
    * Uses (high + low) / 2 as an approximation.
