@@ -1,0 +1,538 @@
+{
+	"id": "b70ba04e-1dba-4511-9e2c-6498fa40cdc5",
+	"name": "Trading API - T2 Final",
+	"timestamp": "2025-10-23T17:23:51.401Z",
+	"collection_id": "48580227-4964f05f-4529-4c87-807a-874593d73f6e",
+	"folder_id": 0,
+	"environment_id": "0",
+	"totalPass": 36,
+	"delay": 0,
+	"persist": true,
+	"status": "finished",
+	"startedAt": "2025-10-23T17:23:50.658Z",
+	"totalFail": 0,
+	"results": [
+		{
+			"id": "301fbe5a-3bb5-4fbe-85d6-b91391b01f57",
+			"name": "Health Check - Typical Valid",
+			"url": "http://localhost:8080/health",
+			"time": 39,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Response has all required fields": true,
+				"Status is 'ok'": true,
+				"All components are healthy": true,
+				"Response time is less than 500ms": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response has all required fields": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Status is 'ok'": {
+					"pass": 1,
+					"fail": 0
+				},
+				"All components are healthy": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response time is less than 500ms": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				39
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Response has all required fields": true,
+					"Status is 'ok'": true,
+					"All components are healthy": true,
+					"Response time is less than 500ms": true
+				}
+			]
+		},
+		{
+			"id": "e937d805-e249-46db-9709-24f5808cdc6a",
+			"name": "Health Check - Consistency (Atypical)",
+			"url": "http://localhost:8080/health",
+			"time": 9,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Response is consistent": true,
+				"Components object exists": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response is consistent": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Components object exists": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				9
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Response is consistent": true,
+					"Components object exists": true
+				}
+			]
+		},
+		{
+			"id": "a3ce351e-9cd3-45ec-8f84-89a29db8f0e7",
+			"name": "Health Check - Wrong Method (Invalid)",
+			"url": "http://localhost:8080/health",
+			"time": 22,
+			"responseCode": {
+				"code": 405,
+				"name": "Method Not Allowed"
+			},
+			"tests": {
+				"Status code is 405 Method Not Allowed": true
+			},
+			"testPassFailCounts": {
+				"Status code is 405 Method Not Allowed": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				22
+			],
+			"allTests": [
+				{
+					"Status code is 405 Method Not Allowed": true
+				}
+			]
+		},
+		{
+			"id": "29d3c675-0bb6-4dd9-93d7-d047ebef55c0",
+			"name": "Get All Audit Logs - Typical Valid",
+			"url": "http://localhost:8080/audit/logs",
+			"time": 25,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Response has required fields": true,
+				"Items is an array": true,
+				"Page defaults to 0": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response has required fields": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Items is an array": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Page defaults to 0": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				25
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Response has required fields": true,
+					"Items is an array": true,
+					"Page defaults to 0": true
+				}
+			]
+		},
+		{
+			"id": "ca48be10-fa58-4c6e-ae9f-315422b2eaee",
+			"name": "Filter by Path - Typical Valid",
+			"url": "http://localhost:8080/audit/logs?path=/health",
+			"time": 16,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"All items have /health path": true,
+				"Response has items": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"All items have /health path": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response has items": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				16
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"All items have /health path": true,
+					"Response has items": true
+				}
+			]
+		},
+		{
+			"id": "366f11f2-d292-473b-8573-3f8625530f36",
+			"name": "Filter by Date Range - Atypical Valid",
+			"url": "http://localhost:8080/audit/logs?from=2025-10-22T00:00:00Z&to=2025-10-24T23:59:59Z",
+			"time": 7,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Response structure is valid": true,
+				"All items within date range": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response structure is valid": {
+					"pass": 1,
+					"fail": 0
+				},
+				"All items within date range": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				7
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Response structure is valid": true,
+					"All items within date range": true
+				}
+			]
+		},
+		{
+			"id": "18786ffd-08b0-40ec-a43a-e473912ec328",
+			"name": "Custom Pagination - Atypical Valid",
+			"url": "http://localhost:8080/audit/logs?page=1&pageSize=10",
+			"time": 5,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Page number is correct": true,
+				"Page size is correct": true,
+				"Items count does not exceed page size": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Page number is correct": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Page size is correct": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Items count does not exceed page size": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				5
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Page number is correct": true,
+					"Page size is correct": true,
+					"Items count does not exceed page size": true
+				}
+			]
+		},
+		{
+			"id": "f79f818f-c8df-4e5f-85b0-0447de82baac",
+			"name": "Invalid Date Format - Invalid Case",
+			"url": "http://localhost:8080/audit/logs?from=invalid-date",
+			"time": 2,
+			"responseCode": {
+				"code": 400,
+				"name": "Bad Request"
+			},
+			"tests": {
+				"Status code is 400 Bad Request": true,
+				"Error message is present": true
+			},
+			"testPassFailCounts": {
+				"Status code is 400 Bad Request": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Error message is present": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				2
+			],
+			"allTests": [
+				{
+					"Status code is 400 Bad Request": true,
+					"Error message is present": true
+				}
+			]
+		},
+		{
+			"id": "214ec0c4-ba00-4a56-b72b-39b19cc8c640",
+			"name": "Verify Audit Logging - Verification Test",
+			"url": "http://localhost:8080/audit/logs",
+			"time": 6,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Audit logs contain recent entries": true,
+				"Logs have required audit fields": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Audit logs contain recent entries": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Logs have required audit fields": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				6
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Audit logs contain recent entries": true,
+					"Logs have required audit fields": true
+				}
+			]
+		},
+		{
+			"id": "a1325948-bb50-408f-9175-aae32c0d78ab",
+			"name": "Get Quote AAPL - Typical Valid",
+			"url": "http://localhost:8080/market/quote/AAPL",
+			"time": 7,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Response has required quote fields": true,
+				"Symbol is AAPL": true,
+				"Prices are positive numbers": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response has required quote fields": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Symbol is AAPL": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Prices are positive numbers": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				7
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Response has required quote fields": true,
+					"Symbol is AAPL": true,
+					"Prices are positive numbers": true
+				}
+			]
+		},
+		{
+			"id": "3af1084d-7508-4533-9ba6-cb74f77589e6",
+			"name": "Get Quote IBM - Atypical Valid",
+			"url": "http://localhost:8080/market/quote/IBM",
+			"time": 3,
+			"responseCode": {
+				"code": 200,
+				"name": "OK"
+			},
+			"tests": {
+				"Status code is 200": true,
+				"Symbol is IBM": true,
+				"Response structure matches AAPL": true
+			},
+			"testPassFailCounts": {
+				"Status code is 200": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Symbol is IBM": {
+					"pass": 1,
+					"fail": 0
+				},
+				"Response structure matches AAPL": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				3
+			],
+			"allTests": [
+				{
+					"Status code is 200": true,
+					"Symbol is IBM": true,
+					"Response structure matches AAPL": true
+				}
+			]
+		},
+		{
+			"id": "ffd96ba5-a605-472f-b45b-dd36fffaaba3",
+			"name": "Get Quote Invalid Symbol - Invalid Case",
+			"url": "http://localhost:8080/market/quote/MSFT",
+			"time": 262,
+			"responseCode": {
+				"code": 404,
+				"name": "Not Found"
+			},
+			"tests": {
+				"Status code is 404 or 500": true
+			},
+			"testPassFailCounts": {
+				"Status code is 404 or 500": {
+					"pass": 1,
+					"fail": 0
+				}
+			},
+			"times": [
+				262
+			],
+			"allTests": [
+				{
+					"Status code is 404 or 500": true
+				}
+			]
+		}
+	],
+	"count": 1,
+	"totalTime": 403,
+	"collection": {
+		"requests": [
+			{
+				"id": "301fbe5a-3bb5-4fbe-85d6-b91391b01f57",
+				"method": "GET"
+			},
+			{
+				"id": "e937d805-e249-46db-9709-24f5808cdc6a",
+				"method": "GET"
+			},
+			{
+				"id": "a3ce351e-9cd3-45ec-8f84-89a29db8f0e7",
+				"method": "POST"
+			},
+			{
+				"id": "29d3c675-0bb6-4dd9-93d7-d047ebef55c0",
+				"method": "GET"
+			},
+			{
+				"id": "ca48be10-fa58-4c6e-ae9f-315422b2eaee",
+				"method": "GET"
+			},
+			{
+				"id": "366f11f2-d292-473b-8573-3f8625530f36",
+				"method": "GET"
+			},
+			{
+				"id": "18786ffd-08b0-40ec-a43a-e473912ec328",
+				"method": "GET"
+			},
+			{
+				"id": "f79f818f-c8df-4e5f-85b0-0447de82baac",
+				"method": "GET"
+			},
+			{
+				"id": "214ec0c4-ba00-4a56-b72b-39b19cc8c640",
+				"method": "GET"
+			},
+			{
+				"id": "a1325948-bb50-408f-9175-aae32c0d78ab",
+				"method": "GET"
+			},
+			{
+				"id": "3af1084d-7508-4533-9ba6-cb74f77589e6",
+				"method": "GET"
+			},
+			{
+				"id": "ffd96ba5-a605-472f-b45b-dd36fffaaba3",
+				"method": "GET"
+			}
+		]
+	}
+}
