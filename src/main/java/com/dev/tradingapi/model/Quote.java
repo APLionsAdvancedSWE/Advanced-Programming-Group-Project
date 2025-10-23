@@ -17,6 +17,13 @@ public class Quote {
   private Instant ts;
 
   /**
+   * Default no-argument constructor. Should not be used directly in application logic.
+   */
+  public Quote() {
+    // For framework use only
+  }
+
+  /**
    * Constructs a new Quote object using OHLCV data.
    *
    * @param symbol trading symbol (e.g., "IBM")
@@ -124,9 +131,22 @@ public class Quote {
     return high.add(low).divide(BigDecimal.valueOf(2), BigDecimal.ROUND_HALF_UP);
   }
 
+  /**
+   * Returns the last traded price for this quote.
+   * In this model, the last price corresponds to the close price
+   * of the most recent trading period.
+   *
+   * @return the last (close) price as a BigDecimal
+   */
+  public BigDecimal getLast() {
+    return close;
+  }
+
   @Override
   public String toString() {
-    return String.format("Quote[%s | open=%s, high=%s, low=%s, close=%s, vol=%d]",
-            symbol, open, high, low, close, volume);
+    return String.format(
+            "Quote[%s | open=%.4f, high=%.4f, low=%.4f, close=%.4f, vol=%d, ts=%s]",
+            symbol, open, high, low, close, volume, ts
+    );
   }
 }
