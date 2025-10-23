@@ -20,6 +20,7 @@ public class Fill {
    * Default constructor.
    */
   public Fill() {
+    // Default constructor for framework use
   }
 
   /**

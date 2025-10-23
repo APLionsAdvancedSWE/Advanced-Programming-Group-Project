@@ -25,12 +25,6 @@ public class Order {
   private Instant createdAt;
 
   /**
-   * Default constructor.
-   */
-  public Order() {
-  }
-
-  /**
    * Gets the order identifier.
    *
    * @return order ID

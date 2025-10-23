@@ -3,12 +3,10 @@ package com.dev.tradingapi.service;
 import com.dev.tradingapi.dto.CreateOrderRequest;
 import com.dev.tradingapi.exception.NotFoundException;
 import com.dev.tradingapi.exception.RiskException;
-import com.dev.tradingapi.model.Account;
 import com.dev.tradingapi.model.Fill;
 import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.model.Quote;
-
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -17,7 +15,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;

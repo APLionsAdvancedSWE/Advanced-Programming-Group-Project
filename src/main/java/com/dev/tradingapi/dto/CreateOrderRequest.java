@@ -21,6 +21,7 @@ public class CreateOrderRequest {
    * Default constructor.
    */
   public CreateOrderRequest() {
+    // Default constructor for framework use
   }
 
   /**
