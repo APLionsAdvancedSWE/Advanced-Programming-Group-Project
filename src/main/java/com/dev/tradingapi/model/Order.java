@@ -6,7 +6,7 @@ import java.util.UUID;
 
 /**
  * Represents a trading order in the system.
- * Orders can be buy or sell orders with various types and time-in-force settings.
+ * Orders can be buy or sell orders with various types.
  */
 public class Order {
 
@@ -266,20 +266,20 @@ public class Order {
 
   @Override
   public String toString() {
-    return "Order{" +
-        "id=" + id +
-        ", accountId=" + accountId +
-        ", clientOrderId='" + clientOrderId + '\'' +
-        ", symbol='" + symbol + '\'' +
-        ", side='" + side + '\'' +
-        ", qty=" + qty +
-        ", type='" + type + '\'' +
-        ", limitPrice=" + limitPrice +
-        ", timeInForce='" + timeInForce + '\'' +
-        ", status='" + status + '\'' +
-        ", filledQty=" + filledQty +
-        ", avgFillPrice=" + avgFillPrice +
-        ", createdAt=" + createdAt +
-        '}';
+    return "Order{"
+        + "id=" + id
+        + ", accountId=" + accountId
+        + ", clientOrderId='" + clientOrderId + '\''
+        + ", symbol='" + symbol + '\''
+        + ", side='" + side + '\''
+        + ", qty=" + qty
+        + ", type='" + type + '\''
+        + ", limitPrice=" + limitPrice
+        + ", timeInForce='" + timeInForce + '\''
+        + ", status='" + status + '\''
+        + ", filledQty=" + filledQty
+        + ", avgFillPrice=" + avgFillPrice
+        + ", createdAt=" + createdAt
+        + '}';
   }
 }

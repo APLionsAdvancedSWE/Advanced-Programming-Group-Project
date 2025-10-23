@@ -8,7 +8,13 @@ import org.springframework.web.bind.annotation.ResponseStatus;
  */
 @ResponseStatus(HttpStatus.BAD_REQUEST)
 public class RiskException extends RuntimeException {
-    public RiskException(String message) {
-        super(message);
-    }
+
+  /**
+   * Constructs a RiskException with the specified detail message.
+   *
+   * @param message the detail message
+   */
+  public RiskException(String message) {
+    super(message);
+  }
 }

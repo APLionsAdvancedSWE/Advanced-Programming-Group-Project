@@ -111,15 +111,6 @@ public class Quote {
     return ts;
   }
 
-  /**
-   * Returns the last traded price (same as close price).
-   * This is commonly used for order execution pricing.
-   *
-   * @return the last/close price
-   */
-  public BigDecimal getLast() {
-    return close;
-  }
 
   /**
    * Calculates an "average" price for convenience.

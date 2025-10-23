@@ -91,12 +91,12 @@ public class Fill {
 
   @Override
   public String toString() {
-    return "Fill{" +
-        "id=" + id +
-        ", orderId=" + orderId +
-        ", qty=" + qty +
-        ", price=" + price +
-        ", ts=" + ts +
-        '}';
+    return "Fill{"
+        + "id=" + id
+        + ", orderId=" + orderId
+        + ", qty=" + qty
+        + ", price=" + price
+        + ", ts=" + ts
+        + '}';
   }
 }
