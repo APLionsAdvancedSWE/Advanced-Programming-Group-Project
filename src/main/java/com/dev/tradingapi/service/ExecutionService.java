@@ -3,6 +3,7 @@ package com.dev.tradingapi.service;
 import com.dev.tradingapi.model.*;
 import com.dev.tradingapi.dto.CreateOrderRequest;
 import com.dev.tradingapi.exception.NotFoundException;
+import com.dev.tradingapi.exception.RiskException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Service;

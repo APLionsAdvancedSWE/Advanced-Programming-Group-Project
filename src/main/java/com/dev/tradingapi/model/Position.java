@@ -1,6 +1,7 @@
 package com.dev.tradingapi.model;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.UUID;
 
 /**
@@ -99,7 +100,7 @@ public class Position {
       BigDecimal totalCostBefore = avgCost.multiply(BigDecimal.valueOf(qty));
       BigDecimal totalCostNew = fillPrice.multiply(BigDecimal.valueOf(fillQty));
       BigDecimal newAvgCost = totalCostBefore.add(totalCostNew)
-              .divide(BigDecimal.valueOf(qty + fillQty), BigDecimal.ROUND_HALF_UP);
+              .divide(BigDecimal.valueOf(qty + fillQty), RoundingMode.HALF_UP);
       this.avgCost = newAvgCost;
     }
     this.qty += fillQty;
