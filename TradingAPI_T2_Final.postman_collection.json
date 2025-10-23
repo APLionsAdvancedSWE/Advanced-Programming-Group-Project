@@ -1,0 +1,595 @@
+{
+  "info": {
+    "name": "Trading API - T2 Final",
+    "description": "Complete API tests for Trading API - Team T2\nTests cover: Health monitoring, Audit logging, and Market data endpoints\nCreated by: Ramya Amancherla",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health Check Tests",
+      "item": [
+        {
+          "name": "Health Check - Typical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has all required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('status');",
+                  "    pm.expect(jsonData).to.have.property('timestamp');",
+                  "    pm.expect(jsonData).to.have.property('components');",
+                  "    pm.expect(jsonData).to.have.property('version');",
+                  "});",
+                  "",
+                  "pm.test(\"Status is 'ok'\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.eql('ok');",
+                  "});",
+                  "",
+                  "pm.test(\"All components are healthy\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.components.database).to.eql('healthy');",
+                  "    pm.expect(jsonData.components.auditLogging).to.eql('healthy');",
+                  "    pm.expect(jsonData.components.marketData).to.eql('healthy');",
+                  "});",
+                  "",
+                  "pm.test(\"Response time is less than 500ms\", function () {",
+                  "    pm.expect(pm.response.responseTime).to.be.below(500);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Health Check - Consistency (Atypical)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response is consistent\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.status).to.be.oneOf(['ok', 'degraded']);",
+                  "});",
+                  "",
+                  "pm.test(\"Components object exists\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.components).to.be.an('object');",
+                  "    pm.expect(Object.keys(jsonData.components).length).to.eql(3);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "health"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Health Check - Wrong Method (Invalid)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 405 Method Not Allowed\", function () {",
+                  "    pm.response.to.have.status(405);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "health"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Audit Logs Tests",
+      "item": [
+        {
+          "name": "Get All Audit Logs - Typical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has required fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('items');",
+                  "    pm.expect(jsonData).to.have.property('page');",
+                  "    pm.expect(jsonData).to.have.property('pageSize');",
+                  "    pm.expect(jsonData).to.have.property('total');",
+                  "});",
+                  "",
+                  "pm.test(\"Items is an array\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.items).to.be.an('array');",
+                  "});",
+                  "",
+                  "pm.test(\"Page defaults to 0\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.page).to.eql(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Path - Typical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"All items have /health path\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    jsonData.items.forEach(function(item) {",
+                  "        pm.expect(item.path).to.eql('/health');",
+                  "    });",
+                  "});",
+                  "",
+                  "pm.test(\"Response has items\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.items.length).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs?path=/health",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "/health"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Filter by Date Range - Atypical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response structure is valid\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('items');",
+                  "});",
+                  "",
+                  "pm.test(\"All items within date range\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    var from = new Date('2025-10-22T00:00:00Z');",
+                  "    var to = new Date('2025-10-24T23:59:59Z');",
+                  "    jsonData.items.forEach(function(item) {",
+                  "        var itemDate = new Date(item.ts);",
+                  "        pm.expect(itemDate.getTime()).to.be.at.least(from.getTime());",
+                  "        pm.expect(itemDate.getTime()).to.be.at.most(to.getTime());",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs?from=2025-10-22T00:00:00Z&to=2025-10-24T23:59:59Z",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2025-10-22T00:00:00Z"
+                },
+                {
+                  "key": "to",
+                  "value": "2025-10-24T23:59:59Z"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Custom Pagination - Atypical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Page number is correct\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.page).to.eql(1);",
+                  "});",
+                  "",
+                  "pm.test(\"Page size is correct\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.pageSize).to.eql(10);",
+                  "});",
+                  "",
+                  "pm.test(\"Items count does not exceed page size\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.items.length).to.be.at.most(10);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs?page=1&pageSize=10",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Invalid Date Format - Invalid Case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 400 Bad Request\", function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Error message is present\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('error');",
+                  "    pm.expect(jsonData).to.have.property('message');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs?from=invalid-date",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "invalid-date"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify Audit Logging - Verification Test",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "exec": [
+                  "// Make a health check call first",
+                  "pm.sendRequest('http://localhost:8080/health', function (err, response) {",
+                  "    console.log('Made health check call');",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Audit logs contain recent entries\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.items.length).to.be.above(0);",
+                  "});",
+                  "",
+                  "pm.test(\"Logs have required audit fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    if (jsonData.items.length > 0) {",
+                  "        var log = jsonData.items[0];",
+                  "        pm.expect(log).to.have.property('id');",
+                  "        pm.expect(log).to.have.property('ts');",
+                  "        pm.expect(log).to.have.property('method');",
+                  "        pm.expect(log).to.have.property('path');",
+                  "        pm.expect(log).to.have.property('status');",
+                  "        pm.expect(log).to.have.property('latencyMs');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/audit/logs",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "audit",
+                "logs"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Market Data Tests",
+      "item": [
+        {
+          "name": "Get Quote AAPL - Typical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has required quote fields\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('symbol');",
+                  "    pm.expect(jsonData).to.have.property('open');",
+                  "    pm.expect(jsonData).to.have.property('high');",
+                  "    pm.expect(jsonData).to.have.property('low');",
+                  "    pm.expect(jsonData).to.have.property('close');",
+                  "    pm.expect(jsonData).to.have.property('volume');",
+                  "    pm.expect(jsonData).to.have.property('ts');",
+                  "});",
+                  "",
+                  "pm.test(\"Symbol is AAPL\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.symbol).to.eql('AAPL');",
+                  "});",
+                  "",
+                  "pm.test(\"Prices are positive numbers\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.open).to.be.above(0);",
+                  "    pm.expect(jsonData.high).to.be.above(0);",
+                  "    pm.expect(jsonData.low).to.be.above(0);",
+                  "    pm.expect(jsonData.close).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/market/quote/AAPL",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "market",
+                "quote",
+                "AAPL"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Quote IBM - Atypical Valid",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Symbol is IBM\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.symbol).to.eql('IBM');",
+                  "});",
+                  "",
+                  "pm.test(\"Response structure matches AAPL\", function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData).to.have.property('symbol');",
+                  "    pm.expect(jsonData).to.have.property('close');",
+                  "    pm.expect(jsonData).to.have.property('volume');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/market/quote/IBM",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "market",
+                "quote",
+                "IBM"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Quote Invalid Symbol - Invalid Case",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 or 500\", function () {",
+                  "    pm.expect([404, 500]).to.include(pm.response.code);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:8080/market/quote/MSFT",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8080",
+              "path": [
+                "market",
+                "quote",
+                "MSFT"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
