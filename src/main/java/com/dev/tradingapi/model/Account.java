@@ -15,6 +15,8 @@ public class Account {
   private BigDecimal maxNotional;
   private int maxPositionQty;
   private Instant createdAt;
+  private BigDecimal initialBalance;
+  private BigDecimal cashBalance;
 
   /**
    * Constructs a new Account object.
@@ -28,7 +30,8 @@ public class Account {
    * @param createdAt creation timestamp
    */
   public Account(UUID id, String name, String apiKey, int maxOrderQty,
-                 BigDecimal maxNotional, int maxPositionQty, Instant createdAt) {
+                 BigDecimal maxNotional, int maxPositionQty,
+                 Instant createdAt, BigDecimal initialBalance) {
     this.id = id;
     this.name = name;
     this.apiKey = apiKey;
@@ -36,6 +39,8 @@ public class Account {
     this.maxNotional = maxNotional;
     this.maxPositionQty = maxPositionQty;
     this.createdAt = createdAt;
+    this.initialBalance = initialBalance;
+    this.cashBalance = initialBalance;
   }
 
   /**
@@ -128,5 +133,37 @@ public class Account {
    */
   public void setMaxPositionQty(int maxPositionQty) {
     this.maxPositionQty = maxPositionQty;
+  }
+
+  /**
+   * Returns the initial funded balance for this account.
+   * This value represents the starting capital and remains constant
+   * unless the account baseline is explicitly reset.
+   *
+   * @return the account's initial starting balance
+   */
+  public BigDecimal getInitialBalance() {
+    return initialBalance;
+  }
+
+  /**
+   * Returns the current available cash balance for this account.
+   * This amount reflects funds remaining after trades, fees, and other adjustments.
+   *
+   * @return the current cash balance
+   */
+  public BigDecimal getCashBalance() {
+    return cashBalance;
+  }
+
+  /**
+   * Adjusts the account's cash balance by the specified delta amount.
+   * A positive delta increases available cash (e.g., after a sale),
+   * while a negative delta decreases it (e.g., after a purchase or fee).
+   *
+   * @param delta the change in cash balance to apply
+   */
+  public void adjustCashBalance(BigDecimal delta) {
+    this.cashBalance = this.cashBalance.add(delta);
   }
 }
