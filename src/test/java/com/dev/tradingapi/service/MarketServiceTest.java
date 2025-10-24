@@ -63,6 +63,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -151,6 +152,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -184,6 +186,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -221,7 +224,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
-      
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -259,7 +262,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
-  
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -296,6 +299,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -333,6 +337,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -371,6 +376,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
@@ -409,6 +415,7 @@ class MarketServiceTest {
           (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
       cache.put(symbol, cachedQuotes);
     } catch (Exception e) {
+      // Reflection access failed, test will continue without cache setup
     }
 
     Quote result = marketService.getQuote(symbol);
