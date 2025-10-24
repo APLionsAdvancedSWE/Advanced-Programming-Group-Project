@@ -457,27 +457,19 @@ Press `Ctrl+C` in the terminal running the application.
 
 ## **Testing**
 
-### **Unit Tests**
-
-**Run All Tests:**
-
-bash
-
-````shell
-mvn clean test
-```
-
-**Output:**
-```
-Tests run: 29, Failures: 0, Errors: 0, Skipped: 0
-````
-
 **Test Breakdown:**
+- HealthControllerTest: 5 tests (Ramya)
+- AuditControllerTest: 7 tests (Ramya)
+- AuditLoggingFilterTest: 6 tests (Ramya)
+- AuditServiceTest: 11 tests (Ramya)
+- MarketServiceTest: 8 tests (Nigel)
+- AccountServiceTest: 12 tests (Nigel)
+- PositionServiceTest: 9 tests (Nigel)
+- PnlServiceTest: 11 tests (Nigel)
+- OrderServiceTest: 15 tests (Ankit)
+- ExecutionServiceTest: 10 tests (Hiba)
+- Additional model and integration tests: 5 tests
 
-* `HealthControllerTest`: 5 tests
-* `AuditControllerTest`: 7 tests
-* `AuditLoggingFilterTest`: 6 tests
-* `AuditServiceTest`: 11 tests
 
 **Run Specific Test Class:**
 
@@ -516,16 +508,13 @@ mvn test -Dtest=HealthControllerTest
 2. Click "Run"
 3. Click "Run Trading API \- T2 Final"
 
-**Test Coverage:**
+**Test Breakdown:**
+- Controller Tests: 12 tests (Health, Audit)
+- Filter Tests: 6 tests (AuditLoggingFilter)
+- Service Tests: 70 tests (Audit, Market, Account, Position, PnL, Order, Execution)
+- Integration & Model Tests: 11 tests
 
-* Health endpoint: 3 tests (typical, atypical, invalid)
-* Audit logs endpoint: 6 tests (filtering, pagination, edge cases)
-* Market data endpoint: 3 tests (valid symbols, invalid symbols, errors)
-
-**Total:** 12 requests with 36 test assertions
-
-**Test Results:** Exported results in `Trading API - T2 Final.postman_test_run.json`
-
+**Total: 99 tests across all components**
 **Features Verified:**
 
 * ✅ Persistent data storage (audit logs written and retrieved)
