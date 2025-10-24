@@ -150,7 +150,7 @@ class OrderControllerTest {
 
     // Mock service throwing NotFoundException
     when(orderService.submit(any(CreateOrderRequest.class)))
-      .thenThrow(new NotFoundException("Market data not available for symbol: INVALID"));
+        .thenThrow(new NotFoundException("Market data not available for symbol: INVALID"));
 
     // Act & Assert: Verify exception propagates
     try {
@@ -196,6 +196,36 @@ class OrderControllerTest {
   }
 
   /**
+   * Test getOrder for a NEW order (atypical valid case).
+   * Verifies controller returns an order that exists but isn't filled yet.
+   */
+  @Test
+  void testGetOrder_Atypical_NewStatus() {
+    // Arrange: Existing order that is not yet filled
+    UUID orderId = UUID.randomUUID();
+    Order mockOrder = new Order();
+    mockOrder.setId(orderId);
+    mockOrder.setSymbol("MSFT");
+    mockOrder.setSide("BUY");
+    mockOrder.setQty(25);
+    mockOrder.setStatus("NEW");
+
+    when(orderService.getOrder(eq(orderId))).thenReturn(mockOrder);
+
+    // Act: Retrieve order
+    ResponseEntity<Order> response = orderController.getOrder(orderId);
+
+    // Assert: Atypical but valid - order exists and is NEW
+    assertNotNull(response);
+    assertEquals(HttpStatus.OK, response.getStatusCode());
+    assertNotNull(response.getBody());
+    assertEquals(orderId, response.getBody().getId());
+    assertEquals("NEW", response.getBody().getStatus());
+
+    verify(orderService, times(1)).getOrder(orderId);
+  }
+
+  /**
    * Test getOrder when order not found - invalid case.
    * Service throws NotFoundException which propagates to caller.
    */
@@ -204,7 +234,7 @@ class OrderControllerTest {
     // Arrange: Non-existent order ID
     UUID nonExistentId = UUID.randomUUID();
     when(orderService.getOrder(eq(nonExistentId)))
-      .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
+        .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
 
     // Act & Assert: Verify exception propagates
     try {
@@ -226,19 +256,17 @@ class OrderControllerTest {
     // Arrange: Order with multiple fills
     UUID orderId = UUID.randomUUID();
     Fill fill1 = new Fill(
-      UUID.randomUUID(),
-      orderId,
-      50,
-      new BigDecimal("150.00"),
-      Instant.now()
-    );
+        UUID.randomUUID(),
+        orderId,
+        50,
+        new BigDecimal("150.00"),
+        Instant.now());
     Fill fill2 = new Fill(
-      UUID.randomUUID(),
-      orderId,
-      50,
-      new BigDecimal("150.10"),
-      Instant.now().plusSeconds(1)
-    );
+        UUID.randomUUID(),
+        orderId,
+        50,
+        new BigDecimal("150.10"),
+        Instant.now().plusSeconds(1));
     List<Fill> mockFills = Arrays.asList(fill1, fill2);
 
     when(orderService.getFills(eq(orderId))).thenReturn(mockFills);
@@ -288,7 +316,7 @@ class OrderControllerTest {
     // Arrange: Non-existent order
     UUID nonExistentId = UUID.randomUUID();
     when(orderService.getFills(eq(nonExistentId)))
-      .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
+        .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
 
     // Act & Assert: Verify exception propagates
     try {
@@ -363,7 +391,7 @@ class OrderControllerTest {
     // Arrange: Non-existent order
     UUID nonExistentId = UUID.randomUUID();
     when(orderService.cancel(eq(nonExistentId)))
-      .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
+        .thenThrow(new NotFoundException("Order not found: " + nonExistentId));
 
     // Act & Assert: Verify exception propagates
     try {

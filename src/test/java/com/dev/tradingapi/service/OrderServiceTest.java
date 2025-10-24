@@ -78,7 +78,7 @@ class OrderServiceTest {
 
     // Mock market data returning a quote with price $150.00
     Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-      new BigDecimal("148.00"), new BigDecimal("150.00"), 1000000L, Instant.now());
+        new BigDecimal("148.00"), new BigDecimal("150.00"), 1000000L, Instant.now());
     when(marketService.getQuote("AAPL")).thenReturn(quote);
 
     // Mock risk validation to pass
@@ -86,8 +86,8 @@ class OrderServiceTest {
 
     // Mock JDBC operations for order, fill, and position persistence
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), eq("AAPL")))
-      .thenReturn(null); // No existing position
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), 
+        eq("AAPL"))).thenReturn(null); // No existing position
 
     // Act: Submit the order
     Order result = orderService.submit(req);
@@ -128,7 +128,7 @@ class OrderServiceTest {
 
     // Mock market data
     Quote quote = new Quote("AMZN", new BigDecimal("3190.00"), new BigDecimal("3210.00"),
-      new BigDecimal("3180.00"), new BigDecimal("3200.50"), 500000L, Instant.now());
+        new BigDecimal("3180.00"), new BigDecimal("3200.50"), 500000L, Instant.now());
     when(marketService.getQuote("AMZN")).thenReturn(quote);
 
     // Mock risk validation to pass
@@ -136,8 +136,8 @@ class OrderServiceTest {
 
     // Mock JDBC operations
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), eq("AMZN")))
-      .thenReturn(null);
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
+        eq("AMZN"))).thenReturn(null);
 
     // Act: Submit the TWAP order
     Order result = orderService.submit(req);
@@ -151,8 +151,10 @@ class OrderServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(105, result.getFilledQty()); // All shares filled across slices
 
-    // Verify multiple fill inserts (one for order, multiple for fills, one for position)
-    // For TWAP with 105 shares: 10 slices (10 base + 5 remainder = 11,11,11,11,11,10,10,10,10,10)
+    // Verify multiple fill inserts (one for order, multiple for fills, one for
+    // position)
+    // For TWAP with 105 shares: 10 slices (10 base + 5 remainder =
+    // 11,11,11,11,11,10,10,10,10,10)
     // 1 saveOrder + 10 saveFills + 1 savePosition + 1 updateOrder = 13 total
     verify(jdbcTemplate, times(13)).update(anyString(), any(Object[].class));
   }
@@ -188,7 +190,8 @@ class OrderServiceTest {
 
   /**
    * Test submitting order with existing position - atypical valid case.
-   * Verifies that position is updated correctly when account already holds the symbol.
+   * Verifies that position is updated correctly when account already holds the
+   * symbol.
    */
   @Test
   void testSubmit_WithExistingPosition_UpdatesCorrectly() {
@@ -203,7 +206,7 @@ class OrderServiceTest {
 
     // Mock market data
     Quote quote = new Quote("IBM", new BigDecimal("138.00"), new BigDecimal("142.00"),
-      new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
+        new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
     when(marketService.getQuote("IBM")).thenReturn(quote);
 
     doNothing().when(riskService).validate(any(), any());
@@ -211,7 +214,7 @@ class OrderServiceTest {
     // Mock existing position: account holds 100 shares at avg cost $135
     Position existingPos = new Position(accountId, "IBM", 100, new BigDecimal("135.00"));
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(accountId), eq("IBM")))
-      .thenReturn(existingPos);
+        .thenReturn(existingPos);
 
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
@@ -223,7 +226,8 @@ class OrderServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(50, result.getFilledQty());
 
-    // Verify position update was called (existing position should be updated with new fill)
+    // Verify position update was called (existing position should be updated with
+    // new fill)
     // 1 saveOrder + 1 saveFill + 1 savePosition + 1 updateOrder = 4 total
     verify(jdbcTemplate, times(4)).update(anyString(), any(Object[].class));
   }
@@ -245,7 +249,7 @@ class OrderServiceTest {
     mockOrder.setCreatedAt(Instant.now());
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
 
     // Act: Retrieve the order
     Order result = orderService.getOrder(orderId);
@@ -268,7 +272,7 @@ class OrderServiceTest {
     // Arrange: Mock JDBC throwing exception for non-existent order
     UUID nonExistentId = UUID.randomUUID();
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(nonExistentId)))
-      .thenThrow(new RuntimeException("No result"));
+        .thenThrow(new RuntimeException("No result"));
 
     // Act & Assert: Verify NotFoundException is thrown
     NotFoundException exception = assertThrows(NotFoundException.class, () -> {
@@ -293,13 +297,14 @@ class OrderServiceTest {
 
     // Mock fills for the order
     Fill fill1 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.00"), Instant.now());
-    Fill fill2 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.10"), Instant.now().plusSeconds(1));
+    Fill fill2 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.10"), 
+        Instant.now().plusSeconds(1));
     List<Fill> mockFills = Arrays.asList(fill1, fill2);
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
     when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockFills);
+        .thenReturn(mockFills);
 
     // Act: Get fills for the order
     List<Fill> result = orderService.getFills(orderId);
@@ -323,7 +328,7 @@ class OrderServiceTest {
     // Arrange: Mock order lookup failing
     UUID nonExistentId = UUID.randomUUID();
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(nonExistentId)))
-      .thenThrow(new RuntimeException("No result"));
+        .thenThrow(new RuntimeException("No result"));
 
     // Act & Assert: Verify exception thrown during order validation
     assertThrows(NotFoundException.class, () -> {
@@ -347,9 +352,9 @@ class OrderServiceTest {
     mockOrder.setStatus("NEW");
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
     when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(Arrays.asList());
+        .thenReturn(Arrays.asList());
 
     // Act: Get fills
     List<Fill> result = orderService.getFills(orderId);
@@ -374,7 +379,7 @@ class OrderServiceTest {
     mockOrder.setFilledQty(0);
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
 
     // Act: Cancel the order
@@ -403,7 +408,7 @@ class OrderServiceTest {
     mockOrder.setFilledQty(100);
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
 
     // Act: Attempt to cancel
     Order result = orderService.cancel(orderId);
@@ -429,7 +434,7 @@ class OrderServiceTest {
     mockOrder.setStatus("CANCELLED"); // Already cancelled
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
-      .thenReturn(mockOrder);
+        .thenReturn(mockOrder);
 
     // Act: Attempt to cancel again
     Order result = orderService.cancel(orderId);
@@ -451,7 +456,7 @@ class OrderServiceTest {
     // Arrange: Mock order lookup failing
     UUID nonExistentId = UUID.randomUUID();
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(nonExistentId)))
-      .thenThrow(new RuntimeException("No result"));
+        .thenThrow(new RuntimeException("No result"));
 
     // Act & Assert: Verify exception is thrown
     assertThrows(NotFoundException.class, () -> {
@@ -477,13 +482,13 @@ class OrderServiceTest {
     req.setType("TWAP");
 
     Quote quote = new Quote("IBM", new BigDecimal("138.00"), new BigDecimal("142.00"),
-      new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
+        new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
     when(marketService.getQuote("IBM")).thenReturn(quote);
 
     doNothing().when(riskService).validate(any(), any());
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), eq("IBM")))
-      .thenReturn(null);
+        .thenReturn(null);
 
     // Act: Submit small TWAP order
     Order result = orderService.submit(req);
@@ -496,5 +501,130 @@ class OrderServiceTest {
     // Verify multiple fills were created (at least 2 for TWAP)
     // 1 saveOrder + 3 saveFills + 1 savePosition + 1 updateOrder = 6 total
     verify(jdbcTemplate, times(6)).update(anyString(), any(Object[].class));
+  }
+
+  /**
+   * Test write-then-read flow: submit an order (write) then retrieve it and its
+   * fills (read). Verifies persistence interactions are used for both.
+   */
+  @Test
+  void testWriteThenRead_SubmitThenGetOrderAndFills() {
+    // Arrange: MARKET order
+    CreateOrderRequest req = new CreateOrderRequest();
+    UUID accountId = UUID.randomUUID();
+    req.setAccountId(accountId);
+    req.setSymbol("AAPL");
+    req.setSide("BUY");
+    req.setQty(10);
+    req.setType("MARKET");
+
+    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
+        new BigDecimal("148.00"), new BigDecimal("150.00"), 100000L, Instant.now());
+    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    doNothing().when(riskService).validate(any(), any());
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
+        eq("AAPL"))).thenReturn(null);
+
+    // Act: Write - submit order
+    Order created = orderService.submit(req);
+
+    // Arrange read stubs based on created order id
+    UUID orderId = created.getId();
+    Order stored = new Order();
+    stored.setId(orderId);
+    stored.setAccountId(accountId);
+    stored.setSymbol("AAPL");
+    stored.setSide("BUY");
+    stored.setQty(10);
+    stored.setStatus("FILLED");
+
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
+        .thenReturn(stored);
+
+    Fill f1 = new Fill(UUID.randomUUID(), orderId, 10, new BigDecimal("150.00"),
+        Instant.now());
+    when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
+        .thenReturn(Arrays.asList(f1));
+
+    // Act: Read - get order and fills
+    Order fetched = orderService.getOrder(orderId);
+    List<Fill> fetchedFills = orderService.getFills(orderId);
+
+    // Assert: Data round-trips as expected
+    assertNotNull(fetched);
+    assertEquals(orderId, fetched.getId());
+    assertEquals("AAPL", fetched.getSymbol());
+    assertNotNull(fetchedFills);
+    assertEquals(1, fetchedFills.size());
+    assertEquals(10, fetchedFills.get(0).getQty());
+
+  // Verify write and read occurred (allowing for multiple lookups internally)
+  verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
+    .queryForObject(anyString(), any(RowMapper.class), eq(orderId));
+  verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
+    .query(anyString(), any(RowMapper.class), eq(orderId));
+  }
+
+  /**
+   * Test two clients submit orders without interference.
+   * Verifies JDBC persistence receives both accountIds across updates.
+   */
+  @Test
+  void testSubmit_TwoClients_AreIsolated() {
+    // Arrange two different accounts
+    UUID acctA = UUID.randomUUID();
+    UUID acctB = UUID.randomUUID();
+
+    CreateOrderRequest a = new CreateOrderRequest();
+    a.setAccountId(acctA);
+    a.setSymbol("AAPL");
+    a.setSide("BUY");
+    a.setQty(5);
+    a.setType("MARKET");
+
+    CreateOrderRequest b = new CreateOrderRequest();
+    b.setAccountId(acctB);
+    b.setSymbol("MSFT");
+    b.setSide("SELL");
+    b.setQty(7);
+    b.setType("MARKET");
+
+    when(marketService.getQuote("AAPL")).thenReturn(new Quote("AAPL",
+        new BigDecimal("149"), new BigDecimal("151"), new BigDecimal("148"),
+        new BigDecimal("150"), 1000L, Instant.now()));
+    when(marketService.getQuote("MSFT")).thenReturn(new Quote("MSFT",
+        new BigDecimal("299"), new BigDecimal("301"), new BigDecimal("298"),
+        new BigDecimal("300"), 1000L, Instant.now()));
+    doNothing().when(riskService).validate(any(), any());
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), any()))
+        .thenReturn(null);
+
+    // Act: submit orders for two clients
+    orderService.submit(a);
+    orderService.submit(b);
+
+    // Capture all update parameter arrays to verify both accountIds appeared
+    org.mockito.ArgumentCaptor<Object[]> paramsCaptor =
+        org.mockito.ArgumentCaptor.forClass(Object[].class);
+    verify(jdbcTemplate, org.mockito.Mockito.atLeast(1))
+        .update(anyString(), paramsCaptor.capture());
+
+    boolean seenA = false;
+    boolean seenB = false;
+    for (Object[] arr : paramsCaptor.getAllValues()) {
+      for (Object v : arr) {
+        if (acctA.equals(v)) {
+          seenA = true;
+        }
+        if (acctB.equals(v)) {
+          seenB = true;
+        }
+      }
+    }
+
+    assertTrue(seenA, "Updates should contain account A id");
+    assertTrue(seenB, "Updates should contain account B id");
   }
 }
