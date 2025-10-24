@@ -1,11 +1,13 @@
 package com.dev.tradingapi.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import java.math.BigDecimal;
 import java.time.Instant;
 
 /**
  * This class defines the Quote model.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class Quote {
 
   private String symbol;

@@ -86,7 +86,7 @@ class OrderServiceTest {
 
     // Mock JDBC operations for order, fill, and position persistence
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), 
+    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
         eq("AAPL"))).thenReturn(null); // No existing position
 
     // Act: Submit the order
@@ -297,7 +297,7 @@ class OrderServiceTest {
 
     // Mock fills for the order
     Fill fill1 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.00"), Instant.now());
-    Fill fill2 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.10"), 
+    Fill fill2 = new Fill(UUID.randomUUID(), orderId, 50, new BigDecimal("150.10"),
         Instant.now().plusSeconds(1));
     List<Fill> mockFills = Arrays.asList(fill1, fill2);
 
@@ -549,21 +549,21 @@ class OrderServiceTest {
 
     // Act: Read - get order and fills
     Order fetched = orderService.getOrder(orderId);
-    List<Fill> fetchedFills = orderService.getFills(orderId);
 
     // Assert: Data round-trips as expected
     assertNotNull(fetched);
     assertEquals(orderId, fetched.getId());
     assertEquals("AAPL", fetched.getSymbol());
+    List<Fill> fetchedFills = orderService.getFills(orderId);
     assertNotNull(fetchedFills);
     assertEquals(1, fetchedFills.size());
     assertEquals(10, fetchedFills.get(0).getQty());
 
-  // Verify write and read occurred (allowing for multiple lookups internally)
-  verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
-    .queryForObject(anyString(), any(RowMapper.class), eq(orderId));
-  verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
-    .query(anyString(), any(RowMapper.class), eq(orderId));
+    // Verify write and read occurred (allowing for multiple lookups internally)
+    verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
+        .queryForObject(anyString(), any(RowMapper.class), eq(orderId));
+    verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
+        .query(anyString(), any(RowMapper.class), eq(orderId));
   }
 
   /**
@@ -574,7 +574,6 @@ class OrderServiceTest {
   void testSubmit_TwoClients_AreIsolated() {
     // Arrange two different accounts
     UUID acctA = UUID.randomUUID();
-    UUID acctB = UUID.randomUUID();
 
     CreateOrderRequest a = new CreateOrderRequest();
     a.setAccountId(acctA);
@@ -582,6 +581,8 @@ class OrderServiceTest {
     a.setSide("BUY");
     a.setQty(5);
     a.setType("MARKET");
+
+    UUID acctB = UUID.randomUUID();
 
     CreateOrderRequest b = new CreateOrderRequest();
     b.setAccountId(acctB);
@@ -606,8 +607,8 @@ class OrderServiceTest {
     orderService.submit(b);
 
     // Capture all update parameter arrays to verify both accountIds appeared
-    org.mockito.ArgumentCaptor<Object[]> paramsCaptor =
-        org.mockito.ArgumentCaptor.forClass(Object[].class);
+    org.mockito.ArgumentCaptor<Object[]> paramsCaptor = org.mockito.ArgumentCaptor.forClass(
+        Object[].class);
     verify(jdbcTemplate, org.mockito.Mockito.atLeast(1))
         .update(anyString(), paramsCaptor.capture());
 
