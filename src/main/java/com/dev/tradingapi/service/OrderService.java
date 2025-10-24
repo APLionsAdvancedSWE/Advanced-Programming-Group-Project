@@ -122,7 +122,7 @@ public class OrderService {
     try {
       return jdbcTemplate.queryForObject(sql, new OrderMapper(), orderId);
     } catch (Exception e) {
-      throw new NotFoundException("Order not found: " + orderId);
+      throw new NotFoundException("Order not found: " + orderId, e);
     }
   }
 
@@ -205,7 +205,7 @@ public class OrderService {
    * </p>
    */
   private void updatePositions(UUID accountId, String side, String symbol, List<Fill> fills) {
-    int signed = ("SELL".equalsIgnoreCase(side)) ? -1 : 1;
+    int signed = "SELL".equalsIgnoreCase(side) ? -1 : 1;
     Position pos = getPosition(accountId, symbol);
     if (pos == null) {
       pos = new Position(accountId, symbol, 0, BigDecimal.ZERO);
