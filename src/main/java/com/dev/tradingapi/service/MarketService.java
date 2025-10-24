@@ -281,6 +281,10 @@ public class MarketService {
    * @return the closest available Quote, or null if no data is available
    */
   public Quote getQuote(String symbol) {
+    if (symbol == null) {
+      return null;
+    }
+    
     Instant target = targetMinuteInstantUtc();
 
     // 1) in-memory
