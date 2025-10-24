@@ -17,4 +17,15 @@ public class NotFoundException extends RuntimeException {
   public NotFoundException(String message) {
     super(message);
   }
+
+  /**
+   * Constructs a NotFoundException with the specified detail message and cause.
+   * Preserves the original stack trace for debugging.
+   *
+   * @param message the detail message
+   * @param cause the underlying cause
+   */
+  public NotFoundException(String message, Throwable cause) {
+    super(message, cause);
+  }
 }

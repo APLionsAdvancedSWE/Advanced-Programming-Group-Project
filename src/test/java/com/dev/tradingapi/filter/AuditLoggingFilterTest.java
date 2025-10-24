@@ -83,6 +83,62 @@ class AuditLoggingFilterTest {
     verify(auditService).logRequest(any(AuditLog.class));
   }
 
+  @Test
+  void testDoFilter_Logs_GetOrderEndpoint() throws Exception {
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/orders/" + java.util.UUID.randomUUID());
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  @Test
+  void testDoFilter_Logs_GetFillsEndpoint() throws Exception {
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI())
+        .thenReturn("/orders/" + java.util.UUID.randomUUID() + "/fills");
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  @Test
+  void testDoFilter_Logs_CancelEndpoint() throws Exception {
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getMethod()).thenReturn("POST");
+    when(request.getRequestURI())
+        .thenReturn("/orders/" + java.util.UUID.randomUUID() + ":cancel");
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  @Test
+  void testDoFilter_Logs_AuditLogsEndpoint() throws Exception {
+    org.mockito.Mockito.lenient().when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    org.mockito.Mockito.lenient().when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/audit/logs");
+    org.mockito.Mockito.lenient().when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    // Some implementations intentionally skip logging for log retrieval to avoid recursion.
+    // Assert that no audit log is written for /audit/logs.
+    verify(auditService, never()).logRequest(any(AuditLog.class));
+  }
+
   /**
    * Test doFilter with non-HTTP request - atypical case.
    * Should pass through without logging.
