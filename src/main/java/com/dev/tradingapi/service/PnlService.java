@@ -67,6 +67,9 @@ public class PnlService {
    */
   public BigDecimal getForAccount(UUID accountId) {
     Account account = accountService.getById(accountId);
+    if (account == null) {
+      return null;
+    }
     List<Position> positions = positionService.getByAccountId(accountId);
 
     BigDecimal portfolioValue = BigDecimal.ZERO;

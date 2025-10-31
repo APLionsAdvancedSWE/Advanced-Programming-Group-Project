@@ -7,10 +7,12 @@ import com.dev.tradingapi.service.PositionService;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 /**
  * REST controller providing account-related endpoints.
@@ -50,7 +52,12 @@ public class AccountController {
    */
   @GetMapping("/{accountId}/positions")
   public List<Position> positions(@PathVariable UUID accountId) {
-    return positionService.getByAccountId(accountId);
+    List<Position> positions = positionService.getByAccountId(accountId);
+    if (positions == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+              "No positions found for account with Id: " + accountId);
+    }
+    return positions;
   }
 
   /**
@@ -61,6 +68,11 @@ public class AccountController {
    */
   @GetMapping("/{accountId}/pnl")
   public BigDecimal pnl(@PathVariable UUID accountId) {
-    return pnlService.getForAccount(accountId);
+    BigDecimal pnlNum = pnlService.getForAccount(accountId);
+    if (pnlNum == null) {
+      throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+              "Account with Id: " + accountId + " was not found");
+    }
+    return pnlNum;
   }
 }
