@@ -96,6 +96,7 @@ public class StartupDataLoader {
       }
     } catch (Exception ignore) {
       // If schema not yet initialized, app will retry on next startup; safe to ignore for demo
+      System.err.println("Exception occurred in StartupDataLoader: " + ignore);
     }
 
     // Seed fills for AAPL and AMZN (positive = buy)
