@@ -67,6 +67,19 @@ public class OrderController {
   }
 
   /**
+   * Retrieves the most recent order by clientOrderId.
+   * Useful for demos where client uses their own ID.
+   *
+   * @param clientOrderId the external client order identifier
+   * @return the latest matching order
+   */
+  @GetMapping("/by-client/{clientOrderId}")
+  public ResponseEntity<Order> getOrderByClientOrderId(@PathVariable("clientOrderId") String clientOrderId) {
+    Order order = orderService.getOrderByClientOrderId(clientOrderId);
+    return ResponseEntity.ok(order);
+  }
+
+  /**
    * Lists all fills belonging to a specific order.
    *
    * @param orderId the order identifier

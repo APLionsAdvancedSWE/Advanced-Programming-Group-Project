@@ -3,10 +3,12 @@ package com.dev.tradingapi.service;
 import com.dev.tradingapi.dto.CreateOrderRequest;
 import com.dev.tradingapi.exception.RiskException;
 import com.dev.tradingapi.model.Quote;
+import org.springframework.stereotype.Service;
 
 /**
  * Service for validating trading orders against risk limits.
  */
+@Service
 public class RiskService {
 
   /**

@@ -14,6 +14,7 @@ import jakarta.annotation.PostConstruct;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,11 +25,14 @@ public class StartupDataLoader {
 
   private final AccountService accountService;
   private final PositionService positionService;
+  private final JdbcTemplate jdbcTemplate;
 
   public StartupDataLoader(AccountService accountService,
-                           PositionService positionService) {
+                           PositionService positionService,
+                           JdbcTemplate jdbcTemplate) {
     this.accountService = accountService;
     this.positionService = positionService;
+    this.jdbcTemplate = jdbcTemplate;
   }
 
   /**
@@ -70,6 +74,29 @@ public class StartupDataLoader {
             new BigDecimal("100000.00")
     );
     accountService.save(account);
+
+    // Also persist demo account to JDBC table so OrderService (JDBC) FK checks pass
+    try {
+      Integer cnt = jdbcTemplate.queryForObject(
+          "SELECT COUNT(*) FROM accounts WHERE id = ?",
+          Integer.class,
+          accId
+      );
+      if (cnt == null || cnt == 0) {
+        jdbcTemplate.update(
+            "INSERT INTO accounts (id, name, api_key, max_order_qty, max_notional, max_position_qty, created_at) "
+                + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+            accId,
+            "Demo Account",
+            "demo-api-key",
+            1000,
+            new BigDecimal("1000000"),
+            10000
+        );
+      }
+    } catch (Exception ignore) {
+      // If schema not yet initialized, app will retry on next startup; safe to ignore for demo
+    }
 
     // Seed fills for AAPL and AMZN (positive = buy)
     // AAPL: buy 10 @ 190.00

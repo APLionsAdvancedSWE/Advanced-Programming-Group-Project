@@ -35,6 +35,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- In-memory database for local demo/development -->
+        <dependency>
+            <groupId>com.h2database</groupId>
+            <artifactId>h2</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>

@@ -127,6 +127,22 @@ public class OrderService {
   }
 
   /**
+   * Returns the most recent order matching the given clientOrderId.
+   *
+   * @param clientOrderId external client-provided identifier
+   * @return the latest matching order
+   * @throws NotFoundException if none found
+   */
+  public Order getOrderByClientOrderId(String clientOrderId) {
+    String sql = "SELECT * FROM orders WHERE client_order_id = ? ORDER BY created_at DESC LIMIT 1";
+    try {
+      return jdbcTemplate.queryForObject(sql, new OrderMapper(), clientOrderId);
+    } catch (Exception e) {
+      throw new NotFoundException("Order not found for clientOrderId: " + clientOrderId, e);
+    }
+  }
+
+  /**
    * Returns all fills associated with an order, ordered by timestamp ascending.
    *
    * @param orderId order identifier
@@ -282,11 +298,18 @@ public class OrderService {
    * Inserts or updates a position row (upsert).
    */
   private void savePosition(Position position) {
-    String sql = "INSERT INTO positions (account_id, symbol, qty, avg_cost) VALUES (?, ?, ?, ?) "
+    String sqlPg = "INSERT INTO positions (account_id, symbol, qty, avg_cost) VALUES (?, ?, ?, ?) "
         + "ON CONFLICT (account_id, symbol) DO UPDATE SET qty = EXCLUDED.qty,"
         + " avg_cost = EXCLUDED.avg_cost";
-    jdbcTemplate.update(sql, position.getAccountId(), position.getSymbol(),
-        position.getQty(), position.getAvgCost());
+    try {
+      jdbcTemplate.update(sqlPg, position.getAccountId(), position.getSymbol(),
+          position.getQty(), position.getAvgCost());
+    } catch (Exception e) {
+      // Fallback for H2 or databases without ON CONFLICT support
+      String sqlMerge = "MERGE INTO positions KEY(account_id, symbol) VALUES (?, ?, ?, ?)";
+      jdbcTemplate.update(sqlMerge, position.getAccountId(), position.getSymbol(),
+          position.getQty(), position.getAvgCost());
+    }
   }
 
   // ---------- RowMappers ----------
