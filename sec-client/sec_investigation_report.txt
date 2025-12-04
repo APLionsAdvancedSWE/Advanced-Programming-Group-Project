@@ -1,0 +1,51 @@
+======================================================================
+SEC COMPLIANCE INVESTIGATION REPORT
+Generated: 2025-12-04 11:45:54
+======================================================================
+
+SUMMARY
+----------------------------------------------------------------------
+Total Audit Logs Analyzed: 12
+Suspicious Patterns Found: 1
+Accounts Monitored: 3
+
+SUSPICIOUS PATTERNS DETECTED
+----------------------------------------------------------------------
+Severity: HIGH
+Type: HIGH_FREQUENCY
+Account ID: aaaa1111-1111-1111-1111-111111111111
+Description: Account made 5 requests in 10 minutes
+
+ACCOUNT ACTIVITY STATISTICS
+----------------------------------------------------------------------
+Account: aaaa1111-1111-1111-1111-111111111111
+  Total Requests: 5
+  Error Count: 0
+  Avg Latency: 8.2 ms
+
+Account: bbbb2222-2222-2222-2222-222222222222
+  Total Requests: 3
+  Error Count: 0
+  Avg Latency: 4.0 ms
+
+Account: cccc3333-3333-3333-3333-333333333333
+  Total Requests: 2
+  Error Count: 0
+  Avg Latency: 2.0 ms
+
+RECENT ACTIVITY LOG (Last 10 entries)
+----------------------------------------------------------------------
+2025-12-04T16:45:52.728563Z | Account: N/A | GET /health | Status: 200
+2025-12-04T06:01:07.301795Z | Account: cccc3333-3333-3333-3333-333333333333 | GET /health | Status: 200
+2025-12-04T06:01:07.288430Z | Account: bbbb2222-2222-2222-2222-222222222222 | GET /health | Status: 200
+2025-12-04T05:59:53.243784Z | Account: cccc3333-3333-3333-3333-333333333333 | GET /health | Status: 200
+2025-12-04T05:59:53.231584Z | Account: bbbb2222-2222-2222-2222-222222222222 | GET /health | Status: 200
+2025-12-04T05:59:34.352216Z | Account: aaaa1111-1111-1111-1111-111111111111 | GET /health | Status: 200
+2025-12-04T05:59:34.337912Z | Account: aaaa1111-1111-1111-1111-111111111111 | GET /health | Status: 200
+2025-12-04T05:59:34.324042Z | Account: aaaa1111-1111-1111-1111-111111111111 | GET /health | Status: 200
+2025-12-04T05:59:34.310448Z | Account: aaaa1111-1111-1111-1111-111111111111 | GET /health | Status: 200
+2025-12-04T05:51:56.118900Z | Account: N/A | GET /health | Status: 200
+
+======================================================================
+END OF REPORT
+======================================================================

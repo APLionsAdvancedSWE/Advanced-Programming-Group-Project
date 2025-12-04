@@ -5,8 +5,6 @@ import com.dev.tradingapi.repository.AuditLogRepository;
 import java.time.Instant;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 
@@ -47,6 +45,7 @@ public class AuditService {
    * Search audit logs with optional filters.
    *
    * @param apiKey optional API key filter
+   * @param accountId optional account ID filter
    * @param path optional path filter
    * @param start optional start time
    * @param end optional end time
@@ -54,44 +53,50 @@ public class AuditService {
    * @param pageSize number of results per page
    * @return list of matching audit logs
    */
-  public List<AuditLog> search(String apiKey, String path,
+  public List<AuditLog> search(String apiKey, String accountId, String path,
                                Instant start, Instant end,
                                int page, int pageSize) {
-    Pageable pageable = PageRequest.of(page, pageSize,
+    // Start with all logs
+    List<AuditLog> results = auditLogRepository.findAll(
             Sort.by(Sort.Direction.DESC, "ts"));
 
-    // Apply filters based on what's provided
-    if (apiKey != null && path != null && start != null && end != null) {
-      // All filters
-      return auditLogRepository.findByApiKey(apiKey).stream()
-              .filter(log -> log.getPath().equals(path))
-              .filter(log -> log.getTs().isAfter(start) && log.getTs().isBefore(end))
-              .sorted((a, b) -> b.getTs().compareTo(a.getTs()))
-              .skip((long) page * pageSize)
-              .limit(pageSize)
+    // Apply filters
+    if (apiKey != null) {
+      results = results.stream()
+              .filter(log -> apiKey.equals(log.getApiKey()))
               .toList();
-    } else if (apiKey != null) {
-      return auditLogRepository.findByApiKey(apiKey).stream()
-              .sorted((a, b) -> b.getTs().compareTo(a.getTs()))
-              .skip((long) page * pageSize)
-              .limit(pageSize)
-              .toList();
-    } else if (path != null) {
-      return auditLogRepository.findByPath(path).stream()
-              .sorted((a, b) -> b.getTs().compareTo(a.getTs()))
-              .skip((long) page * pageSize)
-              .limit(pageSize)
-              .toList();
-    } else if (start != null && end != null) {
-      return auditLogRepository.findByTsBetween(start, end).stream()
-              .sorted((a, b) -> b.getTs().compareTo(a.getTs()))
-              .skip((long) page * pageSize)
-              .limit(pageSize)
-              .toList();
-    } else {
-      // No filters - return all with pagination
-      return auditLogRepository.findAll(pageable).getContent();
     }
+
+    if (accountId != null) {
+      results = results.stream()
+              .filter(log -> accountId.equals(log.getAccountId() != null
+                      ? log.getAccountId().toString() : null))
+              .toList();
+    }
+
+    if (path != null) {
+      results = results.stream()
+              .filter(log -> path.equals(log.getPath()))
+              .toList();
+    }
+
+    if (start != null) {
+      results = results.stream()
+              .filter(log -> log.getTs().isAfter(start))
+              .toList();
+    }
+
+    if (end != null) {
+      results = results.stream()
+              .filter(log -> log.getTs().isBefore(end))
+              .toList();
+    }
+
+    // Apply pagination
+    return results.stream()
+            .skip((long) page * pageSize)
+            .limit(pageSize)
+            .toList();
   }
 
   /**
