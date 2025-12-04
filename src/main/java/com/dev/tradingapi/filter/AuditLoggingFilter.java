@@ -77,6 +77,7 @@ public class AuditLoggingFilter implements Filter {
           accountId = UUID.fromString(accountIdStr);
         } catch (IllegalArgumentException e) {
           // Invalid UUID format - leave as null
+          System.err.println("Invalid UUID format: " + e.getMessage());
         }
       }
 
@@ -112,6 +113,7 @@ public class AuditLoggingFilter implements Filter {
       }
     } catch (Exception e) {
       // Regex pattern error - continue without accountId extraction
+      System.err.println("Pattern matching error: " + e.getMessage());
     }
 
     // 3. Try query parameter
@@ -122,6 +124,7 @@ public class AuditLoggingFilter implements Filter {
       }
     } catch (Exception e) {
       // Parameter extraction error - continue without accountId extraction
+      System.err.println("Parameter extraction error: " + e.getMessage());
     }
 
     // 4. No accountId found
