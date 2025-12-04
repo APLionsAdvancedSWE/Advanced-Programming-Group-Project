@@ -16,9 +16,10 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "audit_logs", indexes = {
-    @Index(name = "idx_audit_api_key", columnList = "api_key"),
-    @Index(name = "idx_audit_path", columnList = "path"),
-    @Index(name = "idx_audit_ts", columnList = "ts")
+        @Index(name = "idx_audit_api_key", columnList = "api_key"),
+        @Index(name = "idx_audit_account_id", columnList = "account_id"),
+        @Index(name = "idx_audit_path", columnList = "path"),
+        @Index(name = "idx_audit_ts", columnList = "ts")
 })
 public class AuditLog {
 
@@ -31,6 +32,9 @@ public class AuditLog {
 
   @Column(name = "api_key")
   private String apiKey;
+
+  @Column(name = "account_id")
+  private UUID accountId;
 
   @Column(name = "method")
   private String method;
@@ -55,7 +59,28 @@ public class AuditLog {
   }
 
   /**
-   * Constructor with all fields.
+   * Constructor with all fields including accountId.
+   *
+   * @param apiKey API key used for the request
+   * @param accountId Account ID making the request
+   * @param method HTTP method (GET, POST, etc.)
+   * @param path Request path
+   * @param status HTTP status code
+   * @param latencyMs Request latency in milliseconds
+   */
+  public AuditLog(String apiKey, UUID accountId, String method, String path,
+                  Integer status, Integer latencyMs) {
+    this();
+    this.apiKey = apiKey;
+    this.accountId = accountId;
+    this.method = method;
+    this.path = path;
+    this.status = status;
+    this.latencyMs = latencyMs;
+  }
+
+  /**
+   * Constructor without accountId for backward compatibility with existing tests.
    *
    * @param apiKey API key used for the request
    * @param method HTTP method (GET, POST, etc.)
@@ -67,6 +92,7 @@ public class AuditLog {
                   Integer status, Integer latencyMs) {
     this();
     this.apiKey = apiKey;
+    this.accountId = null;
     this.method = method;
     this.path = path;
     this.status = status;
@@ -97,6 +123,14 @@ public class AuditLog {
 
   public void setApiKey(String apiKey) {
     this.apiKey = apiKey;
+  }
+
+  public UUID getAccountId() {
+    return accountId;
+  }
+
+  public void setAccountId(UUID accountId) {
+    this.accountId = accountId;
   }
 
   public String getMethod() {
@@ -145,6 +179,7 @@ public class AuditLog {
             + "id=" + id
             + ", ts=" + ts
             + ", apiKey='" + apiKey + '\''
+            + ", accountId=" + accountId
             + ", method='" + method + '\''
             + ", path='" + path + '\''
             + ", status=" + status

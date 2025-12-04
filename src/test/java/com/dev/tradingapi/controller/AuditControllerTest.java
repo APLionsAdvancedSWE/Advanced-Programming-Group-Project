@@ -52,11 +52,11 @@ class AuditControllerTest {
     AuditLog log2 = new AuditLog("key2", "POST", "/orders", 201, 50);
     List<AuditLog> logs = Arrays.asList(log1, log2);
 
-    when(auditService.search(isNull(), isNull(), isNull(), isNull(), eq(0), eq(50)))
+    when(auditService.search(isNull(), isNull(), isNull(), isNull(), isNull(), eq(0), eq(50)))
             .thenReturn(logs);
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, null, null, null, 0, 50);
+            auditController.getLogs(null, null, null, null, null, 0, 50);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertNotNull(response.getBody());
@@ -71,11 +71,11 @@ class AuditControllerTest {
   @Test
   void testGetLogs_WithApiKeyFilter_TypicalCase() {
     AuditLog log = new AuditLog("test-key", "GET", "/health", 200, 10);
-    when(auditService.search(eq("test-key"), isNull(), isNull(), isNull(), eq(0), eq(50)))
+    when(auditService.search(eq("test-key"), isNull(), isNull(), isNull(), isNull(), eq(0), eq(50)))
             .thenReturn(Arrays.asList(log));
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs("test-key", null, null, null, 0, 50);
+            auditController.getLogs("test-key", null, null, null, null, 0, 50);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     List<?> items = (List<?>) response.getBody().get("items");
@@ -88,11 +88,11 @@ class AuditControllerTest {
   @Test
   void testGetLogs_WithPathFilter_AtypicalCase() {
     AuditLog log = new AuditLog("key", "GET", "/health", 200, 10);
-    when(auditService.search(isNull(), eq("/health"), isNull(), isNull(), eq(0), eq(50)))
+    when(auditService.search(isNull(), isNull(), eq("/health"), isNull(), isNull(), eq(0), eq(50)))
             .thenReturn(Arrays.asList(log));
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, "/health", null, null, 0, 50);
+            auditController.getLogs(null, null, "/health", null, null, 0, 50);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     List<?> items = (List<?>) response.getBody().get("items");
@@ -108,12 +108,12 @@ class AuditControllerTest {
     String to = "2025-10-22T23:59:59Z";
     AuditLog log = new AuditLog("key", "GET", "/health", 200, 10);
 
-    when(auditService.search(isNull(), isNull(), any(Instant.class),
+    when(auditService.search(isNull(), isNull(), isNull(), any(Instant.class),
             any(Instant.class), eq(0), eq(50)))
             .thenReturn(Arrays.asList(log));
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, null, from, to, 0, 50);
+            auditController.getLogs(null, null, null, from, to, 0, 50);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     List<?> items = (List<?>) response.getBody().get("items");
@@ -125,11 +125,11 @@ class AuditControllerTest {
    */
   @Test
   void testGetLogs_CustomPagination_AtypicalCase() {
-    when(auditService.search(isNull(), isNull(), isNull(), isNull(), eq(2), eq(10)))
+    when(auditService.search(isNull(), isNull(), isNull(), isNull(), isNull(), eq(2), eq(10)))
             .thenReturn(Arrays.asList());
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, null, null, null, 2, 10);
+            auditController.getLogs(null, null, null, null, null, 2, 10);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals(2, response.getBody().get("page"));
@@ -142,7 +142,7 @@ class AuditControllerTest {
   @Test
   void testGetLogs_InvalidDateFormat_InvalidCase() {
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, null, "invalid-date", null, 0, 50);
+            auditController.getLogs(null, null, null, "invalid-date", null, 0, 50);
 
     assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
     assertTrue(response.getBody().containsKey("error"));
@@ -154,11 +154,11 @@ class AuditControllerTest {
    */
   @Test
   void testGetLogs_EmptyResult_AtypicalCase() {
-    when(auditService.search(any(), any(), any(), any(), anyInt(), anyInt()))
+    when(auditService.search(isNull(), isNull(), isNull(), isNull(), isNull(), anyInt(), anyInt()))
             .thenReturn(Arrays.asList());
 
     ResponseEntity<Map<String, Object>> response =
-            auditController.getLogs(null, null, null, null, 0, 50);
+            auditController.getLogs(null, null, null, null, null, 0, 50);
 
     assertEquals(HttpStatus.OK, response.getStatusCode());
     assertEquals(0, response.getBody().get("total"));

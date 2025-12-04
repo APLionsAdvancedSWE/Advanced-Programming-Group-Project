@@ -1,5 +1,6 @@
 package com.dev.tradingapi.controller;
 
+import com.dev.tradingapi.dto.AuditLogView;
 import com.dev.tradingapi.model.AuditLog;
 import com.dev.tradingapi.service.AuditService;
 import java.time.Instant;
@@ -35,9 +36,10 @@ public class AuditController {
 
   /**
    * Get audit logs with optional filtering.
-   * Supports filtering by API key, path, date range, and pagination.
+   * Supports filtering by API key, account ID, path, date range, and pagination.
    *
    * @param apiKey optional API key filter
+   * @param accountId optional account ID filter
    * @param path optional request path filter
    * @param from optional start timestamp (ISO format)
    * @param to optional end timestamp (ISO format)
@@ -48,6 +50,7 @@ public class AuditController {
   @GetMapping("/logs")
   public ResponseEntity<Map<String, Object>> getLogs(
           @RequestParam(required = false) String apiKey,
+          @RequestParam(required = false) String accountId,
           @RequestParam(required = false) String path,
           @RequestParam(required = false) String from,
           @RequestParam(required = false) String to,
@@ -61,15 +64,20 @@ public class AuditController {
 
       // Search with filters
       List<AuditLog> logs = auditService.search(
-              apiKey, path, startTime, endTime, page, pageSize
+              apiKey, accountId, path, startTime, endTime, page, pageSize
       );
+
+      // Convert to views with masked API keys
+      List<AuditLogView> views = logs.stream()
+              .map(AuditLogView::from)
+              .toList();
 
       // Build response
       Map<String, Object> response = new HashMap<>();
-      response.put("items", logs);
+      response.put("items", views);
       response.put("page", page);
       response.put("pageSize", pageSize);
-      response.put("total", logs.size());
+      response.put("total", views.size());
 
       return ResponseEntity.ok(response);
 

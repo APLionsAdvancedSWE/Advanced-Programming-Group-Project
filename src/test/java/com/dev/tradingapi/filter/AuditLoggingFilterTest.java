@@ -181,4 +181,117 @@ class AuditLoggingFilterTest {
 
     verify(auditService).logRequest(any(AuditLog.class));
   }
+
+  /**
+   * Test accountId extraction from X-Account-Id header.
+   */
+  @Test
+  void testDoFilter_ExtractsAccountIdFromHeader() throws Exception {
+    String accountId = "aaaa1111-1111-1111-1111-111111111111";
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn(accountId);
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/health");
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  /**
+   * Test accountId extraction from URL path.
+   */
+  @Test
+  void testDoFilter_ExtractsAccountIdFromPath() throws Exception {
+    String accountId = "bbbb2222-2222-2222-2222-222222222222";
+    String path = "/accounts/" + accountId + "/positions";
+
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn(null); // No header
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn(path);
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  /**
+   * Test accountId extraction from query parameter.
+   */
+  @Test
+  void testDoFilter_ExtractsAccountIdFromQueryParam() throws Exception {
+    String accountId = "cccc3333-3333-3333-3333-333333333333";
+
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn(null);
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/orders");
+    when(request.getParameter("accountId")).thenReturn(accountId);
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  /**
+   * Test invalid UUID format in header - should handle gracefully.
+   */
+  @Test
+  void testDoFilter_InvalidAccountIdFormat() throws Exception {
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn("invalid-uuid");
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/health");
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  /**
+   * Test no accountId present - should log with null accountId.
+   */
+  @Test
+  void testDoFilter_NoAccountId() throws Exception {
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn(null);
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/market/quote/AAPL");
+    when(request.getParameter("accountId")).thenReturn(null);
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
+
+  /**
+   * Test accountId priority - header takes precedence over path.
+   */
+  @Test
+  void testDoFilter_AccountIdPriorityHeaderOverPath() throws Exception {
+    String headerAccountId = "aaaa1111-1111-1111-1111-111111111111";
+    String pathAccountId = "bbbb2222-2222-2222-2222-222222222222";
+
+    when(request.getHeader("X-API-Key")).thenReturn("test-key");
+    when(request.getHeader("X-Account-Id")).thenReturn(headerAccountId);
+    when(request.getMethod()).thenReturn("GET");
+    when(request.getRequestURI()).thenReturn("/accounts/" + pathAccountId + "/positions");
+    when(response.getStatus()).thenReturn(200);
+
+    auditLoggingFilter.doFilter(request, response, filterChain);
+
+    verify(filterChain).doFilter(request, response);
+    verify(auditService).logRequest(any(AuditLog.class));
+  }
 }
