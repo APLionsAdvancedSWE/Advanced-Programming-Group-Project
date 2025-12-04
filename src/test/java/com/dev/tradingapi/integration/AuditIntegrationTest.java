@@ -1,29 +1,29 @@
 package com.dev.tradingapi.integration;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.dev.tradingapi.model.AuditLog;
 import com.dev.tradingapi.repository.AuditLogRepository;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
-import org.junit.jupiter.api.Disabled;
-
-
-import java.util.List;
-import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * Integration tests for audit logging system.
  * Tests the complete flow: Filter -> Service -> Repository.
  */
-@Disabled
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class AuditIntegrationTest {
 
   @Autowired
@@ -35,7 +35,7 @@ class AuditIntegrationTest {
   /**
    * Integration test: AuditLoggingFilter captures request and AuditService persists to database.
    *
-   * Integrates: AuditLoggingFilter -> AuditService -> AuditLogRepository -> H2 Database
+   * <p>Integrates: AuditLoggingFilter -> AuditService -> AuditLogRepository -> H2 Database
    */
   @Test
   void testFilterToServiceToDatabaseIntegration() throws Exception {
@@ -68,7 +68,7 @@ class AuditIntegrationTest {
   /**
    * Integration test: AuditController queries AuditService which reads from repository.
    *
-   * Integrates: AuditController -> AuditService -> AuditLogRepository
+   * <p>Integrates: AuditController -> AuditService -> AuditLogRepository
    */
   @Test
   void testControllerToServiceToRepositoryIntegration() throws Exception {
@@ -77,30 +77,34 @@ class AuditIntegrationTest {
 
     // Query through controller with authentication
     mockMvc.perform(get("/audit/logs")
-                    .header("Authorization", "Basic c2VjLWludmVzdGlnYXRvcjpzZWMtcGFzcw==")) // sec-investigator:sec-pass
+                    // sec-investigator:sec-pass
+                    .header("Authorization",
+                            "Basic c2VjLWludmVzdGlnYXRvcjpzZWMtcGFzcw=="))
             .andExpect(status().isOk());
   }
 
   /**
    * Integration test: Security layer blocks unauthorized access to audit endpoints.
    *
-   * Integrates: SecurityConfig -> DatabaseUserDetailsService -> UserRepository
+   * <p>Integrates: SecurityConfig -> DatabaseUserDetailsService -> UserRepository
    */
   @Test
   void testSecurityIntegrationBlocksUnauthorizedAccess() throws Exception {
     mockMvc.perform(get("/audit/logs"))
-            .andExpect(status().isUnauthorized());
+        .andExpect(status().isUnauthorized());
   }
 
   /**
    * Integration test: Trader role blocked from audit logs.
    *
-   * Integrates: SecurityConfig -> DatabaseUserDetailsService -> Authorization Matrix
+   * <p>Integrates: SecurityConfig -> DatabaseUserDetailsService -> Authorization Matrix
    */
   @Test
   void testSecurityIntegrationBlocksTraderRole() throws Exception {
     mockMvc.perform(get("/audit/logs")
-                    .header("Authorization", "Basic dHJhZGVyLWpvaG46am9obi1wYXNz")) // trader-john:john-pass
+          // trader-john:john-pass
+          .header("Authorization",
+            "Basic dHJhZGVyLWpvaG46am9obi1wYXNz"))
             .andExpect(status().isForbidden());
   }
 }

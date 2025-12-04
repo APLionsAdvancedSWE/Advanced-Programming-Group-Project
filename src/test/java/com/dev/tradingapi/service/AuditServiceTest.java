@@ -1,22 +1,26 @@
 package com.dev.tradingapi.service;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import com.dev.tradingapi.model.AuditLog;
 import com.dev.tradingapi.repository.AuditLogRepository;
+import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Sort;
-
-import java.time.Instant;
-import java.util.Arrays;
-import java.util.List;
-import java.util.UUID;
-
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.*;
 
 /**
  * Unit tests for AuditService.
@@ -106,7 +110,8 @@ class AuditServiceTest {
     when(auditLogRepository.findAll(any(Sort.class)))
             .thenReturn(Arrays.asList(log1, log2));
 
-    List<AuditLog> results = auditService.search(null, accountId1.toString(), null, null, null, 0, 10);
+    List<AuditLog> results = auditService.search(
+            null, accountId1.toString(), null, null, null, 0, 10);
 
     assertNotNull(results);
     assertEquals(1, results.size());
@@ -136,8 +141,8 @@ class AuditServiceTest {
    */
   @Test
   void testSearch_WithTimeRange_AtypicalCase() {
-    Instant start = Instant.parse("2025-10-22T00:00:00Z");
-    Instant end = Instant.parse("2025-10-22T23:59:59Z");
+    final Instant start = Instant.parse("2025-10-22T00:00:00Z");
+    final Instant end = Instant.parse("2025-10-22T23:59:59Z");
 
     AuditLog log1 = new AuditLog("key", "GET", "/health", 200, 10);
     log1.setTs(Instant.parse("2025-10-22T12:00:00Z"));
@@ -193,8 +198,9 @@ class AuditServiceTest {
    */
   @Test
   void testSearch_InvalidTimeRange_InvalidCase() {
-    Instant start = Instant.parse("2025-10-23T00:00:00Z");
-    Instant end = Instant.parse("2025-10-22T00:00:00Z"); // end before start
+    // end before start
+    final Instant start = Instant.parse("2025-10-23T00:00:00Z");
+    final Instant end = Instant.parse("2025-10-22T00:00:00Z");
 
     AuditLog log = new AuditLog("key", "GET", "/health", 200, 10);
     log.setTs(Instant.parse("2025-10-22T12:00:00Z"));
