@@ -14,6 +14,8 @@ import static org.mockito.Mockito.when;
 import com.dev.tradingapi.model.Quote;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
@@ -38,13 +41,51 @@ class MarketServiceTest {
   private final String testApiKey = "test-api-key";
   @Mock
   private MarketDataRepository marketDataRepository;
+  private HttpClient client;
 
   @BeforeEach
   void setUp() {
     ObjectMapper mapper = new ObjectMapper();
     // Ensure JavaTimeModule is registered so Instant serializes/deserializes
     mapper.findAndRegisterModules();
-    marketService = new MarketService(mapper, marketDataRepository, testApiKey);
+    client = Mockito.mock(HttpClient.class);
+    marketService = new MarketService(mapper, marketDataRepository, testApiKey, client);
+  }
+
+  @Test
+  void targetMinuteInstantUtc_returnsInstantNearOneYearAgo() throws Exception {
+    var method = MarketService.class.getDeclaredMethod("targetMinuteInstantUtc");
+    method.setAccessible(true);
+
+    Instant nowNy = ZonedDateTime.now(ZoneId.of("America/New_York"))
+        .withSecond(0).withNano(0).minusYears(1).toInstant();
+
+    Instant result = (Instant) method.invoke(null);
+
+    long diffSeconds = Math.abs(result.getEpochSecond() - nowNy.getEpochSecond());
+    assertTrue(diffSeconds < 24 * 60 * 60);
+  }
+
+  @Test
+  void fetchIntraday_parsesQuotesAndSortsByTimestamp() throws Exception {
+    String json = "{\"Time Series (1min)\":{"
+        + "\"2024-10-01 09:31:00\":{"
+        + "\"1. open\":\"10\",\"2. high\":\"11\",\"3. low\":\"9\",\""
+        + "4. close\":\"10.5\",\"5. volume\":\"1000\"},"
+        + "\"2024-10-01 09:30:00\":{"
+        + "\"1. open\":\"9\",\"2. high\":\"10\",\"3. low\":\"8\",\""
+        + "4. close\":\"9.5\",\"5. volume\":\"500\"}}}";
+
+    HttpResponse<String> response = Mockito.mock(HttpResponse.class);
+    Mockito.when(response.body()).thenReturn(json);
+    Mockito.when(client.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+        .thenReturn(response);
+
+    List<Quote> quotes = marketService.fetchIntraday("IBM");
+
+    assertNotNull(quotes);
+    assertTrue(quotes.size() == 2);
+    assertTrue(quotes.get(0).getTs().isBefore(quotes.get(1).getTs()));
   }
 
   // --------------- DB-backed getQuote tests ---------------
@@ -72,6 +113,16 @@ class MarketServiceTest {
 
     when(marketDataRepository.findBySymbolOrderByTsAsc(symbol))
         .thenReturn(null);
+
+    // Ensure network fetch path returns an empty series instead of null HttpResponse
+    try {
+      HttpResponse<String> response = Mockito.mock(HttpResponse.class);
+      Mockito.when(response.body()).thenReturn("{\"Time Series (1min)\":{}}");
+      Mockito.when(client.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+          .thenReturn(response);
+    } catch (Exception ignored) {
+      // If stubbing fails, test will still exercise behavior best-effort.
+    }
 
     Quote result = marketService.getQuote(symbol);
 
@@ -125,6 +176,16 @@ class MarketServiceTest {
 
     String symbol = "INVALID";
 
+    // Stub upstream to return an empty series so fetchIntraday produces an empty list
+    try {
+      HttpResponse<String> response = Mockito.mock(HttpResponse.class);
+      Mockito.when(response.body()).thenReturn("{\"Time Series (1min)\":{}}");
+      Mockito.when(client.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+          .thenReturn(response);
+    } catch (Exception ignored) {
+      System.err.println("Ignored exception: " + ignored);
+    }
+
     Quote result = marketService.getQuote(symbol);
 
     assertNull(result);
@@ -145,7 +206,18 @@ class MarketServiceTest {
    */
   @Test
   void testGetQuote_EmptySymbol_InvalidCase() {
-    Quote result = marketService.getQuote("");
+    // Use a MarketService variant that avoids real HTTP usage entirely
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.findAndRegisterModules();
+
+    MarketService localService = new MarketService(mapper, marketDataRepository, testApiKey) {
+      @Override
+      public List<Quote> fetchIntraday(String symbol) {
+        return List.of();
+      }
+    };
+
+    Quote result = localService.getQuote("");
 
     assertNull(result);
   }
@@ -726,13 +798,23 @@ class MarketServiceTest {
     when(marketDataRepository.findBySymbolOrderByTsAsc(symbol))
         .thenReturn(List.of(q));
 
-    marketService.start();
+    // Use a service that never calls out to the real HTTP client
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.findAndRegisterModules();
+    MarketService localService = new MarketService(mapper, marketDataRepository, testApiKey) {
+      @Override
+      public List<Quote> fetchIntraday(String symbol) {
+        return List.of();
+      }
+    };
+
+    localService.start();
 
     var cacheField = MarketService.class.getDeclaredField("cache");
     cacheField.setAccessible(true);
     @SuppressWarnings("unchecked")
     ConcurrentHashMap<String, List<Quote>> cache =
-        (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
+        (ConcurrentHashMap<String, List<Quote>>) cacheField.get(localService);
 
     assertTrue(cache.containsKey(symbol));
   }
@@ -742,22 +824,41 @@ class MarketServiceTest {
     doThrow(new RuntimeException("boom"))
         .when(marketDataRepository).findDistinctSymbols();
 
+    // Use local variant that never touches the real HTTP client
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.findAndRegisterModules();
+    MarketService localService = new MarketService(mapper, marketDataRepository, testApiKey) {
+      @Override
+      public List<Quote> fetchIntraday(String symbol) {
+        return List.of();
+      }
+    };
+
     // Should not throw despite DB failure
-    marketService.start();
+    localService.start();
   }
 
   @Test
   void testStart_NoMockdataDirectory_SkipsFileDiscoveryBranch() throws Exception {
     // Ensure cache is empty and MOCKDATA_DIR does not exist so that the
     // Files.exists(MOCKDATA_DIR) condition takes the false branch.
+    ObjectMapper mapper = new ObjectMapper();
+    mapper.findAndRegisterModules();
+    MarketService localService = new MarketService(mapper, marketDataRepository, testApiKey) {
+      @Override
+      public List<Quote> fetchIntraday(String symbol) {
+        return List.of();
+      }
+    };
+
     var cacheField = MarketService.class.getDeclaredField("cache");
     cacheField.setAccessible(true);
     @SuppressWarnings("unchecked")
     ConcurrentHashMap<String, List<Quote>> cache =
-        (ConcurrentHashMap<String, List<Quote>>) cacheField.get(marketService);
+        (ConcurrentHashMap<String, List<Quote>>) cacheField.get(localService);
     cache.clear();
 
-    marketService.start();
+    localService.start();
     // We only care that start() completed without relying on file discovery;
     // no strict assertion on cache contents, since DB/other state may add data.
   }
@@ -836,9 +937,14 @@ class MarketServiceTest {
 
   @Test
   void testFetchIntraday_NoDataNodeReturnsEmptyList() throws Exception {
-    // Use a symbol that is very unlikely to have data; we only
-    // need to ensure the method handles the missing node path
-    // and returns a non-null (possibly empty) list.
+    // Simulate Alpha Vantage payload without the expected time series node
+    String json = "{\"Note\":\"API limit reached\"}";
+
+    HttpResponse<String> response = Mockito.mock(HttpResponse.class);
+    Mockito.when(response.body()).thenReturn(json);
+    Mockito.when(client.send(Mockito.any(), Mockito.any(HttpResponse.BodyHandler.class)))
+        .thenReturn(response);
+
     List<Quote> quotes = marketService.fetchIntraday("NO_DATA_SYMBOL");
     assertNotNull(quotes);
   }

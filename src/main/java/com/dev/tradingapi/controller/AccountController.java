@@ -71,10 +71,11 @@ public class AccountController {
   @PostMapping("/create")
   public ResponseEntity<AccountCreateResponse> createAccount(
           @RequestBody AccountCreateRequest request) {
-    if (request.getUsername() == null || request.getUsername().isBlank()
-        || request.getPassword() == null || request.getPassword().isBlank()) {
+    if (request.getName() == null || request.getName().isBlank()
+          || request.getUsername() == null || request.getUsername().isBlank()
+            || request.getPassword() == null || request.getPassword().isBlank()) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-              "Username and password must be provided");
+              "Name, username, and password must be provided");
     }
 
     accountRepository.findByUsername(request.getUsername()).ifPresent(a -> {
