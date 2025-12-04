@@ -32,6 +32,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -107,7 +108,8 @@ public class MarketService {
   private final Map<String, List<Quote>> cache = new ConcurrentHashMap<>();
   private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
   private final ObjectMapper mapper;
-
+  private final MarketDataRepository marketDataRepository;
+  private final HttpClient client;
   /**
    * <p>Constructs the MarketService.</p>
    *
@@ -116,13 +118,24 @@ public class MarketService {
    *
    * @param mapper the ObjectMapper injected by Spring
    */
+
+  @Autowired
   public MarketService(ObjectMapper mapper,
+                       MarketDataRepository marketDataRepository,
                        @Value("${alphavantage.api.key}") String apiKey) {
-    this.mapper = mapper;  // Spring’s mapper already has JavaTimeModule etc.
-    this.apiKey = apiKey;
+    this(mapper, marketDataRepository, apiKey, HttpClient.newHttpClient());
   }
 
-  private final HttpClient client = HttpClient.newHttpClient();
+  // Package-visible for testing
+  MarketService(ObjectMapper mapper,
+                MarketDataRepository marketDataRepository,
+                String apiKey,
+                HttpClient client) {
+    this.mapper = mapper;  // Spring’s mapper already has JavaTimeModule etc.
+    this.marketDataRepository = marketDataRepository;
+    this.apiKey = apiKey;
+    this.client = client;
+  }
 
   private static final DateTimeFormatter AV_FORMATTER =
           DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -261,12 +274,13 @@ public class MarketService {
   /**
    * <p>Retrieves the most recent available quote for a symbol.</p>
    *
-   * <p><b>Resolution order:</b></p>
-   * <ol>
-   *   <li>In-memory cache</li>
-   *   <li>Disk cache in <code>src/main/resources/mockdata</code></li>
-   *   <li>Fetch from Alpha Vantage and persist to disk</li>
-   * </ol>
+  * <p><b>Resolution order:</b></p>
+  * <ol>
+  *   <li>In-memory cache</li>
+  *   <li>Database cache in <code>market_bars</code></li>
+  *   <li>Legacy JSON mock files (for bootstrapping only)</li>
+  *   <li>Fetch from Alpha Vantage and persist to DB</li>
+  * </ol>
    *
    * <p><b>Selection logic:</b></p>
    * <ul>
@@ -293,18 +307,28 @@ public class MarketService {
       return pickAtOrBefore(quotes, target);
     }
 
-    // 2) file cache
+    // 2) database cache
+    List<Quote> fromDb = marketDataRepository.findBySymbolOrderByTsAsc(symbol);
+    if (fromDb != null && !fromDb.isEmpty()) {
+      cache.put(symbol, fromDb);
+      return pickAtOrBefore(fromDb, target);
+    }
+
+    // 3) file cache (legacy mockdata for offline/demo)
     List<Quote> fromFile = readCacheFromFile(symbol);
     if (fromFile != null && !fromFile.isEmpty()) {
       cache.put(symbol, fromFile);
+      // also persist to DB so subsequent runs can rely on database
+      marketDataRepository.saveQuotes(symbol, fromFile);
       return pickAtOrBefore(fromFile, target);
     }
 
-    // 3) Alpha Vantage
+    // 4) Alpha Vantage
     List<Quote> fetched = fetchIntraday(symbol);
     if (fetched != null && !fetched.isEmpty()) {
       cache.put(symbol, fetched);
-      saveCacheToFile(symbol, fetched);
+      // persist to DB only; JSON files are legacy/dev-only
+      marketDataRepository.saveQuotes(symbol, fetched);
       if (simTask != null && !simTask.isCancelled()) {
         int startIdx = indexAtOrBefore(fetched, target);
         simPos.put(symbol, startIdx);
@@ -327,7 +351,7 @@ public class MarketService {
    * @param symbol ticker symbol
    * @return list of quotes sorted by timestamp ascending, or null if no data found
    */
-  private List<Quote> fetchIntraday(String symbol) {
+  List<Quote> fetchIntraday(String symbol) {
     try {
       String month = YearMonth.now().minusYears(1)
               .format(DateTimeFormatter.ofPattern("yyyy-MM")); // e.g., 2024-10
@@ -375,8 +399,8 @@ public class MarketService {
       quotes.sort(Comparator.comparing(Quote::getTs)); // ascending by UTC Instant
       return quotes;
     } catch (IOException | InterruptedException e) {
-      e.printStackTrace();
-      return new ArrayList<>();
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("Failed to fetch quotes from upstream service", e);
     }
   }
 
@@ -391,7 +415,7 @@ public class MarketService {
    * @param symbol ticker symbol
    * @param quotes list of quotes to save
    */
-  private void saveCacheToFile(String symbol, List<Quote> quotes) {
+  void saveCacheToFile(String symbol, List<Quote> quotes) {
     try {
       if (!Files.exists(MOCKDATA_DIR)) {
         Files.createDirectories(MOCKDATA_DIR);
@@ -430,8 +454,7 @@ public class MarketService {
       System.out.println("Loaded cache for " + symbol + " from " + filePath);
       return new ArrayList<>(quotes);
     } catch (IOException e) {
-      e.printStackTrace();
-      return new ArrayList<>();
+      throw new IllegalStateException("Failed to read market data cache", e);
     }
   }
 
@@ -507,28 +530,47 @@ public class MarketService {
   public void start() {
     System.out.println("Starting MarketService...");
 
-    // 1) Load all cached files into memory (skip empty/corrupt)
+    // 1) Refresh all known symbols into memory and DB.
+    //    Known symbols come from two places:
+    //    - Symbols that already have rows in the database
+    //    - Symbols that have JSON cache files on disk
+    //    For each symbol we prefer DB data; JSON is a fallback that
+    //    also hydrates the DB.
     cache.clear();
+
+    // Discover symbols from DB by selecting distinct symbols from market_bars.
+    // We use JdbcTemplate indirectly via the repository: load all quotes for
+    // each distinct symbol and cache them.
+    try {
+      List<String> dbSymbols = marketDataRepository.findDistinctSymbols();
+      for (String symbol : dbSymbols) {
+        List<Quote> fromDb = marketDataRepository.findBySymbolOrderByTsAsc(symbol);
+        if (fromDb != null && !fromDb.isEmpty()) {
+          cache.put(symbol, new ArrayList<>(fromDb));
+        }
+      }
+    } catch (Exception e) {
+      // If DB discovery fails for any reason, fall back to file-only discovery
+      System.err.println("Failed to load symbols from database: " + e.getMessage());
+    }
+
+    // Also discover symbols from JSON files for any that are not yet in the
+    // cache. When we see a file-only symbol, we load it via getQuote so that
+    // DB and in-memory cache are hydrated consistently.
     if (Files.exists(MOCKDATA_DIR)) {
       try (DirectoryStream<Path> stream = Files.newDirectoryStream(MOCKDATA_DIR, "*.json")) {
         for (Path path : stream) {
           String fileName = path.getFileName().toString();
           String symbol = fileName.split("-")[0];
-          try {
-            long size = Files.size(path);
-            if (size < 2) { // too small to be valid JSON
-              System.err.println("Skipping empty cache file: " + fileName);
-              continue;
-            }
-            List<Quote> quotes = Arrays.asList(mapper.readValue(path.toFile(), Quote[].class));
-            if (quotes.isEmpty()) {
-              continue;
-            }
-            // ensure sorted ascending by timestamp
-            quotes.sort(Comparator.comparing(Quote::getTs));
-            cache.put(symbol, new ArrayList<>(quotes));
-          } catch (IOException e) {
-            System.err.println("Skipping corrupt cache file: " + fileName);
+
+          if (cache.containsKey(symbol)) {
+            continue; // already loaded from DB
+          }
+
+          Quote q = getQuote(symbol);
+          if (q == null) {
+            System.err.println("No market data available to start simulation for symbol: "
+                    + symbol);
           }
         }
       } catch (IOException e) {

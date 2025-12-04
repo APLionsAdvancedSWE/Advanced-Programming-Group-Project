@@ -74,7 +74,8 @@ public class OrderController {
    * @return the latest matching order
    */
   @GetMapping("/by-client/{clientOrderId}")
-  public ResponseEntity<Order> getOrderByClientOrderId(@PathVariable("clientOrderId") String clientOrderId) {
+  public ResponseEntity<Order> getOrderByClientOrderId(
+          @PathVariable("clientOrderId") String clientOrderId) {
     Order order = orderService.getOrderByClientOrderId(clientOrderId);
     return ResponseEntity.ok(order);
   }

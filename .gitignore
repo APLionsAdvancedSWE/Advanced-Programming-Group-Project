@@ -3,4 +3,4 @@ target/
 application.properties
 .DS_Store
 .vscode/
-.src/main/resources/mockdata/*
+src/main/resources/mockdata/*

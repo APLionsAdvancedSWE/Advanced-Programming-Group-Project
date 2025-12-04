@@ -27,6 +27,13 @@ public class StartupDataLoader {
   private final PositionService positionService;
   private final JdbcTemplate jdbcTemplate;
 
+  /**
+   * Creates a new data loader used to seed demo trading data.
+   *
+   * @param accountService service used to persist and update accounts
+   * @param positionService service used to apply demo fills and positions
+   * @param jdbcTemplate JDBC template used for low-level schema seeding
+   */
   public StartupDataLoader(AccountService accountService,
                            PositionService positionService,
                            JdbcTemplate jdbcTemplate) {
@@ -84,7 +91,8 @@ public class StartupDataLoader {
       );
       if (cnt == null || cnt == 0) {
         jdbcTemplate.update(
-            "INSERT INTO accounts (id, name, api_key, max_order_qty, max_notional, max_position_qty, created_at) "
+            "INSERT INTO accounts (id, name, api_key, max_order_qty,"
+                + " max_notional, max_position_qty, created_at) "
                 + "VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
             accId,
             "Demo Account",
