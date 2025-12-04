@@ -96,10 +96,13 @@ public class OrderService {
     order.setCreatedAt(Instant.now());
     saveOrder(order);
 
-    // 4) execution model: MARKET -> single fill; TWAP -> equal slices
+    // 4) execution model: MARKET -> single fill; LIMIT -> check price and liquidity;
+    // TWAP -> equal slices
     List<Fill> fills;
     if ("TWAP".equalsIgnoreCase(req.getType())) {
       fills = generateTwapFills(order, mark);
+    } else if ("LIMIT".equalsIgnoreCase(req.getType())) {
+      fills = generateLimitFill(order, mark);
     } else {
       fills = generateMarketFill(order, mark);
     }
@@ -177,15 +180,91 @@ public class OrderService {
   // ---------- Helpers ----------
 
   /**
-   * Generates a single market fill at the last price.
+   * Generates a single market fill at the last price with available liquidity.
+   * 
+   * <p>Respects available market liquidity - may result in partial fills if insufficient
+   * shares are available. Returns empty list if no liquidity is available.
    */
   private List<Fill> generateMarketFill(Order order, Quote mark) {
     List<Fill> fills = new ArrayList<>();
     BigDecimal price = mark.getLast();
-    Fill fill = new Fill(UUID.randomUUID(), order.getId(), order.getQty(), price, Instant.now());
-    saveFill(fill);
-    fills.add(fill);
+    
+    int availableQty = calculateAvailableLiquidity(order, mark);
+    int fillQty = Math.min(availableQty, order.getQty());
+    
+    if (fillQty > 0) {
+      Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, price, Instant.now());
+      saveFill(fill);
+      fills.add(fill);
+    }
+    
     return fills;
+  }
+
+  /**
+   * Generates fills for a LIMIT order based on price acceptance and available liquidity.
+   * 
+   * <p>For BUY orders: Fills only if limitPrice >= current market price (trader willing
+   * to pay at least the current price).
+   * 
+   * <p>For SELL orders: Fills only if limitPrice <= current market price (trader willing
+   * to sell at most the current price).
+   * 
+   * <p>When filled, uses the limit price for execution (better price for the trader).
+   * Respects available liquidity - may result in partial fills or no fills if price
+   * is not acceptable or insufficient shares are available.
+   */
+  private List<Fill> generateLimitFill(Order order, Quote mark) {
+    List<Fill> fills = new ArrayList<>();
+    
+    if (order.getLimitPrice() == null) {
+      return fills;
+    }
+    
+    BigDecimal currentPrice = mark.getLast();
+    BigDecimal limitPrice = order.getLimitPrice();
+    boolean priceAcceptable = false;
+    
+    if ("BUY".equalsIgnoreCase(order.getSide())) {
+      priceAcceptable = limitPrice.compareTo(currentPrice) >= 0;
+    } else if ("SELL".equalsIgnoreCase(order.getSide())) {
+      priceAcceptable = limitPrice.compareTo(currentPrice) <= 0;
+    }
+    
+    if (!priceAcceptable) {
+      return fills;
+    }
+    
+    int availableQty = calculateAvailableLiquidity(order, mark);
+    int fillQty = Math.min(availableQty, order.getQty());
+    
+    if (fillQty > 0) {
+      Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, limitPrice, Instant.now());
+      saveFill(fill);
+      fills.add(fill);
+    }
+    
+    return fills;
+  }
+
+  /**
+   * Calculates available liquidity at the current price.
+   * 
+   * <p>Simulates market depth by using 10% of the quote volume or a minimum of 50 shares,
+   * whichever is larger. The result is capped at 10,000 shares to prevent unrealistic
+   * fill quantities. This ensures orders may receive partial fills or no fills when
+   * market liquidity is limited.
+   *
+   * @param order the order requesting liquidity
+   * @param mark current market quote
+   * @return available quantity at the price (between 50 and 10,000 shares)
+   */
+  private int calculateAvailableLiquidity(Order order, Quote mark) {
+    long volume = mark.getVolume();
+    int availableFromVolume = (int) (volume * 0.1);
+    int minLiquidity = 50;
+    
+    return Math.max(minLiquidity, Math.min(availableFromVolume, 10000));
   }
 
   /**
@@ -233,8 +312,13 @@ public class OrderService {
   }
 
   /**
-   * Updates order aggregate fields (filledQty, avgFillPrice, status) and persists
-   * them.
+   * Updates order aggregate fields (filledQty, avgFillPrice, status) and persists them.
+   * 
+   * <p>Calculates total filled quantity and average fill price from the provided fills.
+   * Sets order status dynamically:
+   * - WORKING: No fills occurred (order remains in market)
+   * - PARTIALLY_FILLED: Some fills but less than order quantity
+   * - FILLED: Total fills meet or exceed order quantity
    */
   private void updateOrderStatus(Order order, List<Fill> fills) {
     int totalFilled = fills.stream().mapToInt(Fill::getQty).sum();
@@ -247,7 +331,17 @@ public class OrderService {
       order.setAvgFillPrice(totalCost.divide(BigDecimal.valueOf(totalFilled), 
           RoundingMode.HALF_UP));
     }
-    order.setStatus(totalFilled >= order.getQty() ? "FILLED" : "PARTIALLY_FILLED");
+    
+    if (totalFilled == 0) {
+      if ("NEW".equals(order.getStatus())) {
+        order.setStatus("WORKING");
+      }
+    } else if (totalFilled >= order.getQty()) {
+      order.setStatus("FILLED");
+    } else {
+      order.setStatus("PARTIALLY_FILLED");
+    }
+    
     updateOrder(order);
   }
 

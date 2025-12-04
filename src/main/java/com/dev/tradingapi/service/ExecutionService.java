@@ -87,21 +87,76 @@ public class ExecutionService {
 
   /**
    * Generates fills for an order based on market conditions.
+   * 
+   * <p>For LIMIT orders: Validates that the limit price is acceptable before filling.
+   * BUY limit orders fill only if limitPrice >= current market price.
+   * SELL limit orders fill only if limitPrice <= current market price.
+   * When filled, uses the limit price (better execution for the trader).
+   * 
+   * <p>For MARKET orders: Fills immediately at current market price.
+   * 
+   * <p>All orders respect available liquidity - may result in partial fills or no fills
+   * if insufficient shares are available at the price.
    *
    * @param order the order to fill
    * @param mark current market quote
-   * @return list of generated fills
+   * @return list of generated fills (may be empty if price not acceptable or no liquidity)
    */
   private List<Fill> generateFills(Order order, Quote mark) {
     List<Fill> fills = new ArrayList<>();
-    BigDecimal price = mark.getLast();
+    BigDecimal currentPrice = mark.getLast();
     Instant now = Instant.now();
-
-    Fill fill = new Fill(UUID.randomUUID(), order.getId(), order.getQty(), price, now);
-    fills.add(fill);
-    saveFill(fill);
-
+    
+    int fillQty = 0;
+    BigDecimal fillPrice = currentPrice;
+    
+    if ("LIMIT".equalsIgnoreCase(order.getType()) && order.getLimitPrice() != null) {
+      BigDecimal limitPrice = order.getLimitPrice();
+      boolean priceAcceptable = false;
+      
+      if ("BUY".equalsIgnoreCase(order.getSide())) {
+        priceAcceptable = limitPrice.compareTo(currentPrice) >= 0;
+      } else if ("SELL".equalsIgnoreCase(order.getSide())) {
+        priceAcceptable = limitPrice.compareTo(currentPrice) <= 0;
+      }
+      
+      if (!priceAcceptable) {
+        return fills;
+      }
+      
+      fillPrice = limitPrice;
+    }
+    
+    int availableQty = calculateAvailableLiquidity(order, mark);
+    fillQty = Math.min(availableQty, order.getQty());
+    
+    if (fillQty > 0) {
+      Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, fillPrice, now);
+      fills.add(fill);
+      saveFill(fill);
+    }
+    
     return fills;
+  }
+
+  /**
+   * Calculates available liquidity at the current price.
+   * 
+   * <p>Simulates market depth by using 10% of the quote volume or a minimum of 50 shares,
+   * whichever is larger. The result is capped at 10,000 shares to prevent unrealistic
+   * fill quantities. This ensures orders may receive partial fills or no fills when
+   * market liquidity is limited.
+   *
+   * @param order the order requesting liquidity
+   * @param mark current market quote
+   * @return available quantity at the price (between 50 and 10,000 shares)
+   */
+  private int calculateAvailableLiquidity(Order order, Quote mark) {
+    long volume = mark.getVolume();
+    int availableFromVolume = (int) (volume * 0.1);
+    int minLiquidity = 50;
+    
+    return Math.max(minLiquidity, Math.min(availableFromVolume, 10000));
   }
 
   /**
@@ -128,9 +183,15 @@ public class ExecutionService {
 
   /**
    * Updates order status based on fills.
+   * 
+   * <p>Calculates total filled quantity and average fill price from the provided fills.
+   * Sets order status dynamically:
+   * - WORKING: No fills occurred (order remains in market)
+   * - PARTIALLY_FILLED: Some fills but less than order quantity
+   * - FILLED: Total fills meet or exceed order quantity
    *
    * @param order the order to update
-   * @param fills list of fills
+   * @param fills list of fills (may be empty)
    */
   private void updateOrderStatus(Order order, List<Fill> fills) {
     int totalFilled = fills.stream().mapToInt(Fill::getQty).sum();
@@ -144,7 +205,11 @@ public class ExecutionService {
           RoundingMode.HALF_UP));
     }
 
-    if (totalFilled >= order.getQty()) {
+    if (totalFilled == 0) {
+      if ("NEW".equals(order.getStatus())) {
+        order.setStatus("WORKING");
+      }
+    } else if (totalFilled >= order.getQty()) {
       order.setStatus("FILLED");
     } else {
       order.setStatus("PARTIALLY_FILLED");
