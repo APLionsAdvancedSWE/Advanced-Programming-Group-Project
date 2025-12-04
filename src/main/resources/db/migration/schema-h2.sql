@@ -3,7 +3,9 @@
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
-  api_key VARCHAR(255),
+  auth_token VARCHAR(255),
+  username VARCHAR(255) UNIQUE,
+  password_hash VARCHAR(255),
   max_order_qty INT NOT NULL,
   max_notional NUMERIC(18,2) NOT NULL,
   max_position_qty INT NOT NULL,
@@ -49,3 +51,17 @@ CREATE TABLE IF NOT EXISTS positions (
 );
 CREATE INDEX IF NOT EXISTS idx_positions_account ON positions(account_id);
 CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
+
+-- Historical intraday market data (one row per bar)
+CREATE TABLE IF NOT EXISTS market_bars (
+  id UUID PRIMARY KEY,
+  symbol VARCHAR(50) NOT NULL,
+  ts TIMESTAMP WITH TIME ZONE NOT NULL,
+  open NUMERIC(18,4) NOT NULL,
+  high NUMERIC(18,4) NOT NULL,
+  low NUMERIC(18,4) NOT NULL,
+  close NUMERIC(18,4) NOT NULL,
+  volume BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_ts
+  ON market_bars(symbol, ts);

@@ -3,7 +3,9 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE TABLE IF NOT EXISTS accounts (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name TEXT NOT NULL,
-  api_key TEXT UNIQUE,
+  auth_token TEXT UNIQUE,
+  username TEXT UNIQUE,
+  password_hash TEXT,
   max_order_qty INT NOT NULL,
   max_notional NUMERIC(18,2) NOT NULL,
   max_position_qty INT NOT NULL,
@@ -46,3 +48,17 @@ CREATE TABLE IF NOT EXISTS positions (
 );
 CREATE INDEX IF NOT EXISTS idx_positions_account ON positions(account_id);
 CREATE INDEX IF NOT EXISTS idx_positions_symbol ON positions(symbol);
+
+-- Historical intraday market data (one row per bar)
+CREATE TABLE IF NOT EXISTS market_bars (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  symbol TEXT NOT NULL,
+  ts TIMESTAMPTZ NOT NULL,
+  open NUMERIC(18,4) NOT NULL,
+  high NUMERIC(18,4) NOT NULL,
+  low NUMERIC(18,4) NOT NULL,
+  close NUMERIC(18,4) NOT NULL,
+  volume BIGINT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_market_bars_symbol_ts
+  ON market_bars(symbol, ts);

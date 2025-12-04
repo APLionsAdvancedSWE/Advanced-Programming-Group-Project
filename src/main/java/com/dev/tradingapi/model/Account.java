@@ -10,7 +10,7 @@ import java.util.UUID;
 public class Account {
   private UUID id;
   private String name;
-  private String apiKey;
+  private String authToken;
   private int maxOrderQty;
   private BigDecimal maxNotional;
   private int maxPositionQty;
@@ -23,18 +23,18 @@ public class Account {
    *
    * @param id unique account identifier
    * @param name display name for the account
-   * @param apiKey API key for authentication
+  * @param authToken authentication token for the account
    * @param maxOrderQty max quantity per order
    * @param maxNotional max dollar value per order
    * @param maxPositionQty max total position size
    * @param createdAt creation timestamp
    */
-  public Account(UUID id, String name, String apiKey, int maxOrderQty,
+  public Account(UUID id, String name, String authToken, int maxOrderQty,
                  BigDecimal maxNotional, int maxPositionQty,
                  Instant createdAt, BigDecimal initialBalance) {
     this.id = id;
     this.name = name;
-    this.apiKey = apiKey;
+    this.authToken = authToken;
     this.maxOrderQty = maxOrderQty;
     this.maxNotional = maxNotional;
     this.maxPositionQty = maxPositionQty;
@@ -63,12 +63,12 @@ public class Account {
   }
 
   /**
-   * Returns the API key assigned to this account.
+  * Returns the authentication token assigned to this account.
    *
    * @return the account's API key string
    */
-  public String getApiKey() {
-    return apiKey;
+  public String getAuthToken() {
+    return authToken;
   }
 
   /**

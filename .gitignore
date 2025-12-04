@@ -1,6 +1,6 @@
 .idea
 target/
-application.properties
+.env
 .DS_Store
 .vscode/
-.src/main/resources/mockdata/*
+src/main/resources/mockdata/*

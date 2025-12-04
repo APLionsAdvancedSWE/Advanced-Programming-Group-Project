@@ -1,6 +1,7 @@
 package com.dev.tradingapi.service;
 
 import com.dev.tradingapi.model.Account;
+import com.dev.tradingapi.repository.AccountRepository;
 import java.math.BigDecimal;
 import java.util.Map;
 import java.util.UUID;
@@ -22,6 +23,12 @@ public class AccountService {
 
   /** Map of accountId → Account object. */
   private final Map<UUID, Account> accounts = new ConcurrentHashMap<>();
+  private final AccountRepository accountRepository;
+
+
+  public AccountService(AccountRepository accountRepository) {
+    this.accountRepository = accountRepository;
+  }
 
   /**
    * Registers or updates an account.
@@ -65,4 +72,40 @@ public class AccountService {
   public Iterable<Account> getAll() {
     return accounts.values();
   }
+
+  /**
+   * Updates the risk limits for the specified account. Any null values in the
+   * arguments will preserve the existing value.
+   *
+   * @param accountId account identifier
+   * @param maxOrderQty new max order quantity (nullable)
+   * @param maxNotional new max notional (nullable)
+   * @param maxPositionQty new max position quantity (nullable)
+   * @return the updated Account
+   */
+  public Account updateRiskLimits(UUID accountId, Integer maxOrderQty,
+                                  BigDecimal maxNotional,
+                                  Integer maxPositionQty) {
+    Account inMemory = accounts.get(accountId);
+    if (inMemory == null) {
+      Account fromDb = accountRepository.findById(accountId)
+          .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+      accounts.put(accountId, fromDb);
+      inMemory = fromDb;
+    }
+
+    int newMaxOrderQty = maxOrderQty != null ? maxOrderQty : inMemory.getMaxOrderQty();
+    BigDecimal newMaxNotional = maxNotional != null ? maxNotional : inMemory.getMaxNotional();
+    int newMaxPositionQty = maxPositionQty != null ? maxPositionQty : inMemory.getMaxPositionQty();
+
+    inMemory.setMaxOrderQty(newMaxOrderQty);
+    inMemory.setMaxNotional(newMaxNotional);
+    inMemory.setMaxPositionQty(newMaxPositionQty);
+
+    accountRepository.updateRiskLimits(accountId, newMaxOrderQty, newMaxNotional,
+        newMaxPositionQty);
+
+    return inMemory;
+  }
 }
+

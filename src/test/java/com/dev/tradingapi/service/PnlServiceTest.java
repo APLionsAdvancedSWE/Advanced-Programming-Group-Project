@@ -1,6 +1,7 @@
 package com.dev.tradingapi.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
@@ -11,7 +12,6 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -56,9 +56,6 @@ class PnlServiceTest {
     );
   }
 
-  /**
-   * Test PnL calculation with no positions - should return zero.
-   */
   @Test
   void testGetForAccount_NoPositions_ShouldReturnZero() {
  
@@ -70,9 +67,16 @@ class PnlServiceTest {
     assertEquals(BigDecimal.ZERO.setScale(10), result);
   }
 
-  /**
-   * Test PnL calculation with profitable position.
-   */
+  @Test
+  void testGetForAccount_AccountNotFound_ReturnsNull() {
+    UUID missingId = UUID.randomUUID();
+    when(accountService.getById(missingId)).thenReturn(null);
+
+    BigDecimal result = pnlService.getForAccount(missingId);
+
+    assertNull(result);
+  }
+
   @Test
   void testGetForAccount_ProfitablePosition_ShouldReturnPositivePnL() {
     BigDecimal initialBalance = new BigDecimal("10000.00");
@@ -100,9 +104,6 @@ class PnlServiceTest {
     assertEquals(expectedPnL, result);
   }
 
-  /**
-   * Test PnL calculation with losing position.
-   */
   @Test
   void testGetForAccount_LosingPosition_ShouldReturnNegativePnL() {
     BigDecimal initialBalance = new BigDecimal("10000.00");
@@ -128,6 +129,21 @@ class PnlServiceTest {
     // = (10500 + 180*50) - 10000 = (10500 + 9000) - 10000 = 9500
     BigDecimal expectedPnL = new BigDecimal("9500.00").setScale(10);
     assertEquals(expectedPnL, result);
+  }
+
+  @Test
+  void testGetForAccount_IgnoresPositionsForOtherAccountsAndNullQuotes() {
+    Position ownPos = new Position(accountId, "AAPL", 5, new BigDecimal("150"));
+
+    when(accountService.getById(accountId)).thenReturn(testAccount);
+    when(positionService.getByAccountId(accountId)).thenReturn(Arrays.asList(ownPos));
+
+    // Quote for own symbol is missing, so positions are ignored and PnL stays at zero
+    when(marketService.getQuote("AAPL")).thenReturn(null);
+
+    BigDecimal pnl = pnlService.getForAccount(accountId);
+
+    assertEquals(BigDecimal.ZERO.setScale(10), pnl);
   }
 
   /**
