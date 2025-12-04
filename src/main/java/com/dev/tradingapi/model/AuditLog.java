@@ -16,10 +16,10 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "audit_logs", indexes = {
-        @Index(name = "idx_audit_api_key", columnList = "api_key"),
-        @Index(name = "idx_audit_account_id", columnList = "account_id"),
-        @Index(name = "idx_audit_path", columnList = "path"),
-        @Index(name = "idx_audit_ts", columnList = "ts")
+  @Index(name = "idx_audit_api_key", columnList = "api_key"),
+  @Index(name = "idx_audit_account_id", columnList = "account_id"),
+  @Index(name = "idx_audit_path", columnList = "path"),
+  @Index(name = "idx_audit_ts", columnList = "ts")
 })
 public class AuditLog {
 

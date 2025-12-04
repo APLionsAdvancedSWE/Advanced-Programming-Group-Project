@@ -31,6 +31,7 @@ public class User {
 
   @Column(name = "account_id")
   private UUID accountId; // Foreign key to accounts table (nullable for non-traders)
+
   /**
    * Default constructor for JPA.
    * Required by JPA specification for entity instantiation.

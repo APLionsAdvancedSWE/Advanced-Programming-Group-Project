@@ -25,6 +25,13 @@ public class SecurityConfig {
     this.userDetailsService = userDetailsService;
   }
 
+  /**
+   * Configures the main Spring Security filter chain for the application.
+   *
+   * @param http the HTTP security builder
+   * @return the configured security filter chain
+   * @throws Exception if a security configuration error occurs
+   */
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     http
