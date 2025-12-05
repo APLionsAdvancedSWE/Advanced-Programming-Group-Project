@@ -337,16 +337,48 @@ json
 
 ---
 
-### **Orders (In Progress)**
+### **Orders**
 
-The following order management endpoints are currently under development:
+#### **`POST /orders`**
 
-* `POST /orders` \- Submit new order
-* `GET /orders/{orderId}` \- Get order details
-* `GET /orders/{orderId}/fills` \- Get order fills
-* `POST /orders/{orderId}:cancel` \- Cancel order
+Submits a new trading order (MARKET, LIMIT, or TWAP).
 
-**Status:** Backend services implemented, REST API endpoints coming soon.
+**Request Body:**
+```json
+{
+  "accountId": "123e4567-e89b-12d3-a456-426614174000",
+  "clientOrderId": "CLIENT-001",
+  "symbol": "AAPL",
+  "side": "BUY",
+  "qty": 100,
+  "type": "MARKET",
+  "limitPrice": null,
+  "timeInForce": "DAY"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "order-uuid",
+  "accountId": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "FILLED",
+  "filledQty": 100,
+  "avgFillPrice": 150.25
+}
+```
+
+#### **`GET /orders/{orderId}`**
+
+Retrieves order details by ID.
+
+#### **`GET /orders/{orderId}/fills`**
+
+Retrieves all fills for an order.
+
+#### **`POST /orders/{orderId}/cancel`**
+
+Cancels an active order.
 
 ---
 
@@ -429,11 +461,22 @@ mvn clean install
 
 ## **Running the Service**
 
-### **Start Application**
+### **Deployed Service**
 
-bash
+The service is deployed on Google Cloud Platform (GCP) Cloud Run:
 
-```shell
+**Production URL:** [https://tradingapi-service-804279656866.us-central1.run.app/](https://tradingapi-service-804279656866.us-central1.run.app/)
+
+**Test Health Endpoint:**
+```bash
+curl https://tradingapi-service-804279656866.us-central1.run.app/health
+```
+
+### **Local Development**
+
+**Start Application:**
+
+```bash
 mvn spring-boot:run
 ```
 
@@ -441,34 +484,180 @@ Application starts on **port 8080** by default.
 
 **Verify Running:**
 
-bash
-
-```shell
+```bash
 curl http://localhost:8080/health
 ```
 
 Expected response: `{"status":"ok", ...}`
 
-### **Stop Application**
+**Stop Application:**
 
 Press `Ctrl+C` in the terminal running the application.
 
 ---
 
+## **Client Application**
+
+### **SEC Compliance Investigation Client**
+
+A standalone Java client application for SEC investigators to analyze trading activity through audit log analysis and pattern detection.
+
+**Location:** `sec-client/` directory in main branch
+
+**What It Does:**
+- Queries and filters audit logs by account, date range, and other criteria
+- Detects suspicious trading patterns (high-frequency trading, error rates)
+- Generates investigation reports (TXT/CSV formats)
+- Supports multiple investigators working simultaneously
+
+**Build and Run:**
+```bash
+cd sec-client
+mvn clean compile
+
+# Interactive client
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-ID"
+
+# Test programs
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestConnection"
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestPatternDetection"
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestReportGeneration"
+```
+
+**Full Documentation:** See `sec-client/README.md`
+
+### **Multiple Client Instances**
+
+The service supports multiple client instances connecting simultaneously:
+
+**How Clients Are Distinguished:**
+1. **API Key Header** (`X-API-Key`): Each client sends a unique API key in the request header
+2. **HTTP Sessions**: Each client instance maintains an independent HTTP connection
+3. **Query Parameters**: Different clients can query different accounts/time ranges simultaneously
+4. **Audit Logging**: The service logs the API key with each request, allowing tracking of which client made which requests
+
+**Example - Multiple Investigators:**
+```bash
+# Terminal 1
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-A"
+
+# Terminal 2
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-B"
+```
+
+Both instances can query the service simultaneously without interference. The service tracks each request's API key in audit logs, allowing identification of which client made which requests.
+
+**Implementation Details:**
+- `AuditLoggingFilter` extracts `X-API-Key` header from each request
+- API key is stored in `audit_logs` table with indexed `api_key` column
+- Each HTTP request is stateless - no server-side session storage required
+- Multiple clients can query the same endpoints concurrently
+
+### **End-to-End Testing**
+
+**Test Checklist:** `sec-client/E2E_TEST_CHECKLIST.md`
+
+The checklist includes manual tests covering all client-to-service interactions:
+
+**API Endpoints Tested:**
+- ✅ `GET /health` - Service health check
+- ✅ `GET /audit/logs` - Audit log queries with filters (accountId, date range, pagination)
+
+**Test Scenarios:**
+- ✅ Connection verification
+- ✅ Query by account ID (filtering)
+- ✅ Pattern detection (high-frequency trading, error rates)
+- ✅ Report generation (TXT/CSV)
+- ✅ Multiple client instances running simultaneously
+- ✅ Authentication verification
+- ✅ Error handling (service down, empty results)
+
+**Test Coverage:**
+- All endpoints used by the SEC client (`/health`, `/audit/logs` with various filters)
+- Success and error scenarios (200, 404, connection failures)
+- Concurrent client operations (multiple investigators)
+- Pattern detection algorithms
+- Report generation workflows
+
+### **Third-Party Client Development**
+
+To develop your own client for the Trading API:
+
+**1. Authentication:**
+- Include `X-API-Key` header in all requests (optional but recommended for audit tracking)
+- Example: `request.setHeader("X-API-Key", "your-api-key")`
+
+**2. Base URL:**
+- Production: `https://tradingapi-service-804279656866.us-central1.run.app/`
+- Local: `http://localhost:8080`
+- Configurable via `application.properties` or environment variables
+
+**3. Available Endpoints:**
+- `GET /health` - Service health check
+- `GET /market/quote/{symbol}` - Market data
+- `GET /audit/logs` - Audit log queries (with filters: `apiKey`, `accountId`, `path`, `from`, `to`, `page`, `pageSize`)
+- `POST /orders` - Submit orders
+- `GET /orders/{orderId}` - Get order details
+- `GET /orders/{orderId}/fills` - Get order fills
+- `POST /orders/{orderId}/cancel` - Cancel orders
+- `GET /accounts/{accountId}/positions` - Get positions
+- `GET /accounts/{accountId}/pnl` - Get P&L
+
+**4. Request/Response Format:**
+- Content-Type: `application/json`
+- Responses: JSON objects or arrays
+- Error responses: Standard HTTP status codes (400, 404, 500)
+
+**5. Example Client Structure:**
+```java
+// HTTP client setup
+CloseableHttpClient httpClient = HttpClients.createDefault();
+HttpGet request = new HttpGet(baseUrl + "/audit/logs");
+request.setHeader("X-API-Key", "your-api-key");
+
+// Execute and parse response
+try (CloseableHttpResponse response = httpClient.execute(request)) {
+    String json = EntityUtils.toString(response.getEntity());
+    // Parse JSON response
+}
+```
+
+**6. Multiple Instances:**
+- Each client instance should use a unique identifier (passed as argument or in API key)
+- No special coordination needed - service handles concurrent requests automatically
+- All requests are logged with API key for tracking
+
+**7. Error Handling:**
+- Check HTTP status codes (200 = success, 404 = not found, 500 = server error)
+- Handle connection failures gracefully
+- Validate JSON responses before parsing
+
+**Reference Implementation:** See `sec-client/src/main/java/com/trading/sec/ApiService.java` for a complete example.
+
+---
+
 ## **Testing**
 
-**Test Breakdown:**
-- HealthControllerTest: 5 tests (Ramya)
-- AuditControllerTest: 7 tests (Ramya)
-- AuditLoggingFilterTest: 6 tests (Ramya)
-- AuditServiceTest: 11 tests (Ramya)
-- MarketServiceTest: 8 tests (Nigel)
-- AccountServiceTest: 12 tests (Nigel)
-- PositionServiceTest: 9 tests (Nigel)
-- PnlServiceTest: 11 tests (Nigel)
-- OrderServiceTest: 15 tests (Ankit)
-- ExecutionServiceTest: 10 tests (Hiba)
-- Additional model and integration tests: 5 tests
+**Latest Test Counts :**
+- `HealthControllerTest`: 5
+- `AuditControllerTest`: 7
+- `OrderControllerTest`: 13
+- `AccountControllerTest`: 12
+- `AuditLoggingFilterTest`: 16
+- `AuditServiceTest`: 11
+- `MarketServiceTest`: 34
+- `AccountServiceTest`: 5
+- `PositionServiceTest`: 7
+- `PnlServiceTest`: 6
+- `OrderServiceTest`: 20
+- `ExecutionServiceTest`: 17
+- Integration tests: 11 total
+  - `AuditIntegrationTest`: 4
+  - `MarketServiceIntegrationTest`: 4
+  - `OrderLifecycleIntegrationTest`: 1
+  - `TradingApiHttpIntegrationTest`: 2
+
+**Total tests:** 166 (155 unit/controller/filter/service + 11 integration)
 
 
 **Run Specific Test Class:**
@@ -490,6 +679,28 @@ mvn test -Dtest=HealthControllerTest
 
 ---
 
+### **Unit, API, and Integration Testing**
+
+- **Equivalence Partitions & Boundaries:**
+  - Controllers and services (Health, Audit, Market, Account, Position, PnL, Order, Execution) include tests covering valid inputs, invalid formats/IDs, and boundary cases (e.g., pagination bounds, empty datasets, symbol support list, UUID validation).
+  - Boundary analysis examples: `page=0 vs negative`, `pageSize=100 vs >100`, `symbol in {AAPL, IBM} vs unknown`, `accountId exists vs missing`.
+- **API Tests (Postman):**
+  - Collection: `TradingAPI_T2_Final.postman_collection.json` with run results `Trading API - T2 Final.postman_test_run.json`.
+  - Covers health, audit logs retrieval with filters, and market quotes including error cases.
+- **Integration Tests:**
+  - Interfaces exercised include `AuditLoggingFilter` → Controllers (log creation end-to-end), Services → Repositories (JPA queries, pagination), Market → PnL (quote consumption), and Account → Position.
+  - Evidence: `target/surefire-reports/*IntegrationTest.txt` (e.g., `MarketServiceIntegrationTest`, `OrderLifecycleIntegrationTest`).
+- **How to Run Locally:**
+
+```zsh
+mvn clean test
+```
+
+- **CI Automation:**
+  - CI is configured to run `mvn test` on PRs merged to `main` and generate reports (unit/integration).
+
+---
+
 ### **API Testing**
 
 **Tool:** Postman
@@ -508,18 +719,34 @@ mvn test -Dtest=HealthControllerTest
 2. Click "Run"
 3. Click "Run Trading API \- T2 Final"
 
-**Test Breakdown:**
-- Controller Tests: 12 tests (Health, Audit)
-- Filter Tests: 6 tests (AuditLoggingFilter)
-- Service Tests: 70 tests (Audit, Market, Account, Position, PnL, Order, Execution)
-- Integration & Model Tests: 11 tests
+**Test Breakdown (high-level):**
+- Controllers: 37 (Health, Audit, Order, Account)
+- Filter: 16 (AuditLoggingFilter)
+- Services: 100+ (Audit, Market, Account, Position, PnL, Order, Execution)
+- Integration: 11
 
-**Total: 99 tests across all components**
+**Total (project): 166 tests across all components**
 **Features Verified:**
 
 * ✅ Persistent data storage (audit logs written and retrieved)
 * ✅ Request logging across all endpoints
 * ✅ Multiple concurrent clients (simulated via Postman)
+
+---
+
+## **Branch Coverage**
+
+- **Coverage Tool:** JaCoCo 0.8.11
+- **Generate Locally:**
+
+```zsh
+mvn clean test jacoco:report
+open target/site/jacoco/index.html
+```
+
+- **Reports in CI:** JaCoCo HTML report is generated during CI runs and published as an artifact.
+- **Recorded Coverage (Service Only):**
+  - Branch coverage is at 84%, more than the rubric target
 
 ---
 
@@ -585,6 +812,8 @@ open target/site/checkstyle.html
 
 **Report Location:** `target/site/checkstyle.html`
 
+**CI Style Checks:** CI runs `mvn checkstyle:check` on PR merge to `main`; failures block merges until violations are fixed.
+
 ---
 
 ### **Static Analysis**
@@ -608,9 +837,16 @@ mvn pmd:pmd
 open target/site/pmd.html
 ```
 
-**Current Status:** 0 warnings in implemented code
+**Current Status:** 0 warnings in implemented code except a suppressed violation for the TradingApiApplication.java
 
 **Report Location:** `target/site/pmd.html`
+
+**Before/After Evidence:**
+- Historical reports are tracked under `reports/`:
+  - `reports/pmd-before.html` → initial findings (if any)
+  - `reports/pmd-after.html` → post-fix state (0 warnings)
+  - `reports/checkstyle-after.html` → style compliance
+- Summary: CI static analysis (PMD) and style checks (Checkstyle) run on every PR; identified issues were addressed prior to merge, reflected in the "after" reports.
 
 ---
 
@@ -775,23 +1011,6 @@ Work is tracked using GitHub Projects with issue-based task management.
 * Database schema configuration
 * PostgreSQL setup and integration
 
-**Testing:**
-
-* 29 unit tests (HealthController: 5, AuditController: 7, AuditLoggingFilter: 6, AuditService: 11\)
-* 12 Postman API tests with 36 assertions
-* Test coverage: 78-93% on implemented components
-
-**Code Quality:**
-
-* 0 Checkstyle violations
-* 0 PMD warnings
-* Full JavaDoc documentation
-
-**Metrics:**
-
-* 13 files created/modified
-* 2,348 lines of code added
-
 ### **Nigel Nosakhare Alexis**
 
 **Components Implemented:**
@@ -808,15 +1027,17 @@ Work is tracked using GitHub Projects with issue-based task management.
 **Components Implemented:**
 
 * Order model class
-* Order management infrastructure (in progress)
+* Order management infrastructure 
 
 ### **Hiba Altaf**
 
 **Components Implemented:**
 
 * ExecutionService backend logic
-* Fill model class
-* Service integration (in progress)
+* Fill, Order, Position, Quote model class
+* Service integration
+* Database schema for orders, accounts, fills, etc
+* Exception handling 
 
 ---
 
