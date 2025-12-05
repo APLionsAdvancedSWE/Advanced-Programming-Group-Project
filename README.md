@@ -337,16 +337,48 @@ json
 
 ---
 
-### **Orders (In Progress)**
+### **Orders**
 
-The following order management endpoints are currently under development:
+#### **`POST /orders`**
 
-* `POST /orders` \- Submit new order
-* `GET /orders/{orderId}` \- Get order details
-* `GET /orders/{orderId}/fills` \- Get order fills
-* `POST /orders/{orderId}:cancel` \- Cancel order
+Submits a new trading order (MARKET, LIMIT, or TWAP).
 
-**Status:** Backend services implemented, REST API endpoints coming soon.
+**Request Body:**
+```json
+{
+  "accountId": "123e4567-e89b-12d3-a456-426614174000",
+  "clientOrderId": "CLIENT-001",
+  "symbol": "AAPL",
+  "side": "BUY",
+  "qty": 100,
+  "type": "MARKET",
+  "limitPrice": null,
+  "timeInForce": "DAY"
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "id": "order-uuid",
+  "accountId": "123e4567-e89b-12d3-a456-426614174000",
+  "status": "FILLED",
+  "filledQty": 100,
+  "avgFillPrice": 150.25
+}
+```
+
+#### **`GET /orders/{orderId}`**
+
+Retrieves order details by ID.
+
+#### **`GET /orders/{orderId}/fills`**
+
+Retrieves all fills for an order.
+
+#### **`POST /orders/{orderId}/cancel`**
+
+Cancels an active order.
 
 ---
 
@@ -429,11 +461,22 @@ mvn clean install
 
 ## **Running the Service**
 
-### **Start Application**
+### **Deployed Service**
 
-bash
+The service is deployed on Google Cloud Platform (GCP) Cloud Run:
 
-```shell
+**Production URL:** [https://tradingapi-service-804279656866.us-central1.run.app/](https://tradingapi-service-804279656866.us-central1.run.app/)
+
+**Test Health Endpoint:**
+```bash
+curl https://tradingapi-service-804279656866.us-central1.run.app/health
+```
+
+### **Local Development**
+
+**Start Application:**
+
+```bash
 mvn spring-boot:run
 ```
 
@@ -441,17 +484,155 @@ Application starts on **port 8080** by default.
 
 **Verify Running:**
 
-bash
-
-```shell
+```bash
 curl http://localhost:8080/health
 ```
 
 Expected response: `{"status":"ok", ...}`
 
-### **Stop Application**
+**Stop Application:**
 
 Press `Ctrl+C` in the terminal running the application.
+
+---
+
+## **Client Application**
+
+### **SEC Compliance Investigation Client**
+
+A standalone Java client application for SEC investigators to analyze trading activity through audit log analysis and pattern detection.
+
+**Location:** `sec-client/` directory in main branch
+
+**What It Does:**
+- Queries and filters audit logs by account, date range, and other criteria
+- Detects suspicious trading patterns (high-frequency trading, error rates)
+- Generates investigation reports (TXT/CSV formats)
+- Supports multiple investigators working simultaneously
+
+**Build and Run:**
+```bash
+cd sec-client
+mvn clean compile
+
+# Interactive client
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-ID"
+
+# Test programs
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestConnection"
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestPatternDetection"
+mvn exec:java -Dexec.mainClass="com.trading.sec.TestReportGeneration"
+```
+
+**Full Documentation:** See `sec-client/README.md`
+
+### **Multiple Client Instances**
+
+The service supports multiple client instances connecting simultaneously:
+
+**How Clients Are Distinguished:**
+1. **API Key Header** (`X-API-Key`): Each client sends a unique API key in the request header
+2. **HTTP Sessions**: Each client instance maintains an independent HTTP connection
+3. **Query Parameters**: Different clients can query different accounts/time ranges simultaneously
+4. **Audit Logging**: The service logs the API key with each request, allowing tracking of which client made which requests
+
+**Example - Multiple Investigators:**
+```bash
+# Terminal 1
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-A"
+
+# Terminal 2
+mvn exec:java -Dexec.mainClass="com.trading.sec.InvestigatorClient" -Dexec.args="INVESTIGATOR-B"
+```
+
+Both instances can query the service simultaneously without interference. The service tracks each request's API key in audit logs, allowing identification of which client made which requests.
+
+**Implementation Details:**
+- `AuditLoggingFilter` extracts `X-API-Key` header from each request
+- API key is stored in `audit_logs` table with indexed `api_key` column
+- Each HTTP request is stateless - no server-side session storage required
+- Multiple clients can query the same endpoints concurrently
+
+### **End-to-End Testing**
+
+**Test Checklist:** `sec-client/E2E_TEST_CHECKLIST.md`
+
+The checklist includes manual tests covering all client-to-service interactions:
+
+**API Endpoints Tested:**
+- ✅ `GET /health` - Service health check
+- ✅ `GET /audit/logs` - Audit log queries with filters (accountId, date range, pagination)
+
+**Test Scenarios:**
+- ✅ Connection verification
+- ✅ Query by account ID (filtering)
+- ✅ Pattern detection (high-frequency trading, error rates)
+- ✅ Report generation (TXT/CSV)
+- ✅ Multiple client instances running simultaneously
+- ✅ Authentication verification
+- ✅ Error handling (service down, empty results)
+
+**Test Coverage:**
+- All endpoints used by the SEC client (`/health`, `/audit/logs` with various filters)
+- Success and error scenarios (200, 404, connection failures)
+- Concurrent client operations (multiple investigators)
+- Pattern detection algorithms
+- Report generation workflows
+
+### **Third-Party Client Development**
+
+To develop your own client for the Trading API:
+
+**1. Authentication:**
+- Include `X-API-Key` header in all requests (optional but recommended for audit tracking)
+- Example: `request.setHeader("X-API-Key", "your-api-key")`
+
+**2. Base URL:**
+- Production: `https://tradingapi-service-804279656866.us-central1.run.app/`
+- Local: `http://localhost:8080`
+- Configurable via `application.properties` or environment variables
+
+**3. Available Endpoints:**
+- `GET /health` - Service health check
+- `GET /market/quote/{symbol}` - Market data
+- `GET /audit/logs` - Audit log queries (with filters: `apiKey`, `accountId`, `path`, `from`, `to`, `page`, `pageSize`)
+- `POST /orders` - Submit orders
+- `GET /orders/{orderId}` - Get order details
+- `GET /orders/{orderId}/fills` - Get order fills
+- `POST /orders/{orderId}/cancel` - Cancel orders
+- `GET /accounts/{accountId}/positions` - Get positions
+- `GET /accounts/{accountId}/pnl` - Get P&L
+
+**4. Request/Response Format:**
+- Content-Type: `application/json`
+- Responses: JSON objects or arrays
+- Error responses: Standard HTTP status codes (400, 404, 500)
+
+**5. Example Client Structure:**
+```java
+// HTTP client setup
+CloseableHttpClient httpClient = HttpClients.createDefault();
+HttpGet request = new HttpGet(baseUrl + "/audit/logs");
+request.setHeader("X-API-Key", "your-api-key");
+
+// Execute and parse response
+try (CloseableHttpResponse response = httpClient.execute(request)) {
+    String json = EntityUtils.toString(response.getEntity());
+    // Parse JSON response
+}
+```
+
+**6. Multiple Instances:**
+- Each client instance should use a unique identifier (passed as argument or in API key)
+- No special coordination needed - service handles concurrent requests automatically
+- All requests are logged with API key for tracking
+
+**7. Error Handling:**
+- Check HTTP status codes (200 = success, 404 = not found, 500 = server error)
+- Handle connection failures gracefully
+- Validate JSON responses before parsing
+
+**Reference Implementation:** See `sec-client/src/main/java/com/trading/sec/ApiService.java` for a complete example.
 
 ---
 
@@ -830,23 +1011,6 @@ Work is tracked using GitHub Projects with issue-based task management.
 * Database schema configuration
 * PostgreSQL setup and integration
 
-**Testing:**
-
-* 29 unit tests (HealthController: 5, AuditController: 7, AuditLoggingFilter: 6, AuditService: 11\)
-* 12 Postman API tests with 36 assertions
-* Test coverage: 78-93% on implemented components
-
-**Code Quality:**
-
-* 0 Checkstyle violations
-* 0 PMD warnings
-* Full JavaDoc documentation
-
-**Metrics:**
-
-* 13 files created/modified
-* 2,348 lines of code added
-
 ### **Nigel Nosakhare Alexis**
 
 **Components Implemented:**
@@ -863,15 +1027,17 @@ Work is tracked using GitHub Projects with issue-based task management.
 **Components Implemented:**
 
 * Order model class
-* Order management infrastructure (in progress)
+* Order management infrastructure 
 
 ### **Hiba Altaf**
 
 **Components Implemented:**
 
 * ExecutionService backend logic
-* Fill model class
-* Service integration (in progress)
+* Fill, Order, Position, Quote model class
+* Service integration
+* Database schema for orders, accounts, fills, etc
+* Exception handling 
 
 ---
 
