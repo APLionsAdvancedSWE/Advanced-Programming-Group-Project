@@ -3,6 +3,7 @@ package com.dev.tradingapi.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -162,14 +163,14 @@ class ExecutionServiceTest {
     UUID accountId = UUID.randomUUID();
     CreateOrderRequest request = new CreateOrderRequest(
         accountId, "CLIENT-004", "AAPL", "SELL", 50, "LIMIT", 
-        new BigDecimal("160.00"), "GTC");
+        new BigDecimal("150.00"), "GTC"); // Limit $150 <= market $152, should fill
     
     Quote quote = new Quote("AAPL", 
         new BigDecimal("150.00"), 
         new BigDecimal("155.00"), 
         new BigDecimal("148.00"), 
         new BigDecimal("152.00"), 
-        1000L, 
+        100000L, // High volume for liquidity
         Instant.now());
 
     when(marketService.getQuote("AAPL")).thenReturn(quote);
@@ -189,9 +190,11 @@ class ExecutionServiceTest {
     assertNotNull(result);
     assertEquals("SELL", result.getSide());
     assertEquals("LIMIT", result.getType());
-    assertEquals(new BigDecimal("160.00"), result.getLimitPrice());
+    assertEquals(new BigDecimal("150.00"), result.getLimitPrice());
     assertEquals("GTC", result.getTimeInForce());
-    assertEquals("FILLED", result.getStatus());
+    // Should fill (limit price <= market price) - either FILLED or PARTIALLY_FILLED
+    assertTrue("FILLED".equals(result.getStatus()) || "PARTIALLY_FILLED".equals(result.getStatus()));
+    assertTrue(result.getFilledQty() > 0);
     verify(marketService, times(1)).getQuote("AAPL");
     verify(riskService, times(1)).validate(request, quote);
   }
@@ -254,21 +257,13 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    
-    Order mockOrder = new Order();
-    mockOrder.setId(UUID.randomUUID());
-    mockOrder.setSymbol("AAPL");
-    mockOrder.setAccountId(accountId);
-    when(jdbcTemplate.queryForObject(anyString(), 
-        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
-        .thenReturn(mockOrder);
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals(0, result.getQty());
     assertEquals(0, result.getFilledQty());
-    assertEquals("FILLED", result.getStatus());
+    assertEquals("WORKING", result.getStatus()); // Zero quantity = no fill, status should be WORKING
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -463,6 +458,159 @@ class ExecutionServiceTest {
     assertNotNull(result);
     assertEquals("FOK", result.getTimeInForce());
     assertEquals("FILLED", result.getStatus());
+    verify(marketService, times(1)).getQuote("AAPL");
+  }
+
+  /**
+   * Test LIMIT BUY order with price too low - should not fill.
+   * When limit price < current price, order should remain WORKING.
+   */
+  @Test
+  void testCreateOrder_LimitBuyPriceTooLow_NoFill() {
+    UUID accountId = UUID.randomUUID();
+    CreateOrderRequest request = new CreateOrderRequest(
+        accountId, "CLIENT-013", "AAPL", "BUY", 100, "LIMIT", 
+        new BigDecimal("145.00"), "GTC"); // Limit $145, market $152
+    
+    Quote quote = new Quote("AAPL", 
+        new BigDecimal("150.00"), 
+        new BigDecimal("155.00"), 
+        new BigDecimal("148.00"), 
+        new BigDecimal("152.00"), // Current price $152
+        1000L, 
+        Instant.now());
+
+    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    doNothing().when(riskService).validate(request, quote);
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+    Order result = executionService.createOrder(request);
+
+    assertNotNull(result);
+    assertEquals("LIMIT", result.getType());
+    assertEquals(new BigDecimal("145.00"), result.getLimitPrice());
+    assertEquals("WORKING", result.getStatus()); // No fill, status should be WORKING
+    assertEquals(0, result.getFilledQty()); // No fills
+    verify(marketService, times(1)).getQuote("AAPL");
+    // Should save order twice: initial insert + status update (no fills, so no position update)
+    verify(jdbcTemplate, times(2)).update(anyString(), any(Object[].class));
+  }
+
+  /**
+   * Test LIMIT BUY order with acceptable price - should fill.
+   * When limit price >= current price, order should fill.
+   */
+  @Test
+  void testCreateOrder_LimitBuyPriceAcceptable_Fills() {
+    UUID accountId = UUID.randomUUID();
+    CreateOrderRequest request = new CreateOrderRequest(
+        accountId, "CLIENT-014", "AAPL", "BUY", 100, "LIMIT", 
+        new BigDecimal("155.00"), "GTC"); // Limit $155, market $152
+    
+    Quote quote = new Quote("AAPL", 
+        new BigDecimal("150.00"), 
+        new BigDecimal("155.00"), 
+        new BigDecimal("148.00"), 
+        new BigDecimal("152.00"), 
+        100000L, // High volume for liquidity
+        Instant.now());
+
+    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    doNothing().when(riskService).validate(request, quote);
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    
+    Order mockOrder = new Order();
+    mockOrder.setId(UUID.randomUUID());
+    mockOrder.setSymbol("AAPL");
+    mockOrder.setAccountId(accountId);
+    when(jdbcTemplate.queryForObject(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+        .thenReturn(mockOrder);
+
+    Order result = executionService.createOrder(request);
+
+    assertNotNull(result);
+    assertEquals("LIMIT", result.getType());
+    assertEquals(new BigDecimal("155.00"), result.getLimitPrice());
+    // Should fill (limit price >= market price)
+    assertTrue("FILLED".equals(result.getStatus()) || "PARTIALLY_FILLED".equals(result.getStatus()));
+    assertTrue(result.getFilledQty() > 0); // Should have some fills
+    verify(marketService, times(1)).getQuote("AAPL");
+  }
+
+  /**
+   * Test LIMIT SELL order with price too high - should not fill.
+   * When limit price > current price, order should remain WORKING.
+   */
+  @Test
+  void testCreateOrder_LimitSellPriceTooHigh_NoFill() {
+    UUID accountId = UUID.randomUUID();
+    CreateOrderRequest request = new CreateOrderRequest(
+        accountId, "CLIENT-015", "AAPL", "SELL", 100, "LIMIT", 
+        new BigDecimal("160.00"), "GTC"); // Limit $160, market $152
+    
+    Quote quote = new Quote("AAPL", 
+        new BigDecimal("150.00"), 
+        new BigDecimal("155.00"), 
+        new BigDecimal("148.00"), 
+        new BigDecimal("152.00"), // Current price $152
+        1000L, 
+        Instant.now());
+
+    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    doNothing().when(riskService).validate(request, quote);
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+
+    Order result = executionService.createOrder(request);
+
+    assertNotNull(result);
+    assertEquals("LIMIT", result.getType());
+    assertEquals("SELL", result.getSide());
+    assertEquals(new BigDecimal("160.00"), result.getLimitPrice());
+    assertEquals("WORKING", result.getStatus()); // No fill
+    assertEquals(0, result.getFilledQty());
+    verify(marketService, times(1)).getQuote("AAPL");
+  }
+
+  /**
+   * Test MARKET order with insufficient liquidity - partial fill.
+   * When available liquidity < order quantity, should partially fill.
+   */
+  @Test
+  void testCreateOrder_MarketOrderInsufficientLiquidity_PartialFill() {
+    UUID accountId = UUID.randomUUID();
+    CreateOrderRequest request = new CreateOrderRequest(
+        accountId, "CLIENT-016", "AAPL", "BUY", 1000, "MARKET", null, "DAY");
+    
+    // Low volume (100) means ~10 shares available (10% of volume, but min 50)
+    Quote quote = new Quote("AAPL", 
+        new BigDecimal("150.00"), 
+        new BigDecimal("155.00"), 
+        new BigDecimal("148.00"), 
+        new BigDecimal("152.00"), 
+        100L, // Very low volume
+        Instant.now());
+
+    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    doNothing().when(riskService).validate(request, quote);
+    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    
+    Order mockOrder = new Order();
+    mockOrder.setId(UUID.randomUUID());
+    mockOrder.setSymbol("AAPL");
+    mockOrder.setAccountId(accountId);
+    when(jdbcTemplate.queryForObject(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+        .thenReturn(mockOrder);
+
+    Order result = executionService.createOrder(request);
+
+    assertNotNull(result);
+    assertEquals("MARKET", result.getType());
+    assertEquals(1000, result.getQty()); // Requested 1000
+    assertEquals("PARTIALLY_FILLED", result.getStatus()); // Should be partial
+    assertTrue(result.getFilledQty() > 0); // Some fills
+    assertTrue(result.getFilledQty() < result.getQty()); // But not all
     verify(marketService, times(1)).getQuote("AAPL");
   }
 }
