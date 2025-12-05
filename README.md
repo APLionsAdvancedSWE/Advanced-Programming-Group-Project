@@ -457,18 +457,26 @@ Press `Ctrl+C` in the terminal running the application.
 
 ## **Testing**
 
-**Test Breakdown:**
-- HealthControllerTest: 5 tests (Ramya)
-- AuditControllerTest: 7 tests (Ramya)
-- AuditLoggingFilterTest: 6 tests (Ramya)
-- AuditServiceTest: 11 tests (Ramya)
-- MarketServiceTest: 8 tests (Nigel)
-- AccountServiceTest: 12 tests (Nigel)
-- PositionServiceTest: 9 tests (Nigel)
-- PnlServiceTest: 11 tests (Nigel)
-- OrderServiceTest: 15 tests (Ankit)
-- ExecutionServiceTest: 10 tests (Hiba)
-- Additional model and integration tests: 5 tests
+**Latest Test Counts :**
+- `HealthControllerTest`: 5
+- `AuditControllerTest`: 7
+- `OrderControllerTest`: 13
+- `AccountControllerTest`: 12
+- `AuditLoggingFilterTest`: 16
+- `AuditServiceTest`: 11
+- `MarketServiceTest`: 34
+- `AccountServiceTest`: 5
+- `PositionServiceTest`: 7
+- `PnlServiceTest`: 6
+- `OrderServiceTest`: 20
+- `ExecutionServiceTest`: 17
+- Integration tests: 11 total
+  - `AuditIntegrationTest`: 4
+  - `MarketServiceIntegrationTest`: 4
+  - `OrderLifecycleIntegrationTest`: 1
+  - `TradingApiHttpIntegrationTest`: 2
+
+**Total tests:** 166 (155 unit/controller/filter/service + 11 integration)
 
 
 **Run Specific Test Class:**
@@ -490,6 +498,28 @@ mvn test -Dtest=HealthControllerTest
 
 ---
 
+### **Unit, API, and Integration Testing**
+
+- **Equivalence Partitions & Boundaries:**
+  - Controllers and services (Health, Audit, Market, Account, Position, PnL, Order, Execution) include tests covering valid inputs, invalid formats/IDs, and boundary cases (e.g., pagination bounds, empty datasets, symbol support list, UUID validation).
+  - Boundary analysis examples: `page=0 vs negative`, `pageSize=100 vs >100`, `symbol in {AAPL, IBM} vs unknown`, `accountId exists vs missing`.
+- **API Tests (Postman):**
+  - Collection: `TradingAPI_T2_Final.postman_collection.json` with run results `Trading API - T2 Final.postman_test_run.json`.
+  - Covers health, audit logs retrieval with filters, and market quotes including error cases.
+- **Integration Tests:**
+  - Interfaces exercised include `AuditLoggingFilter` → Controllers (log creation end-to-end), Services → Repositories (JPA queries, pagination), Market → PnL (quote consumption), and Account → Position.
+  - Evidence: `target/surefire-reports/*IntegrationTest.txt` (e.g., `MarketServiceIntegrationTest`, `OrderLifecycleIntegrationTest`).
+- **How to Run Locally:**
+
+```zsh
+mvn clean test
+```
+
+- **CI Automation:**
+  - CI is configured to run `mvn test` on PRs merged to `main` and generate reports (unit/integration).
+
+---
+
 ### **API Testing**
 
 **Tool:** Postman
@@ -508,18 +538,34 @@ mvn test -Dtest=HealthControllerTest
 2. Click "Run"
 3. Click "Run Trading API \- T2 Final"
 
-**Test Breakdown:**
-- Controller Tests: 12 tests (Health, Audit)
-- Filter Tests: 6 tests (AuditLoggingFilter)
-- Service Tests: 70 tests (Audit, Market, Account, Position, PnL, Order, Execution)
-- Integration & Model Tests: 11 tests
+**Test Breakdown (high-level):**
+- Controllers: 37 (Health, Audit, Order, Account)
+- Filter: 16 (AuditLoggingFilter)
+- Services: 100+ (Audit, Market, Account, Position, PnL, Order, Execution)
+- Integration: 11
 
-**Total: 99 tests across all components**
+**Total (project): 166 tests across all components**
 **Features Verified:**
 
 * ✅ Persistent data storage (audit logs written and retrieved)
 * ✅ Request logging across all endpoints
 * ✅ Multiple concurrent clients (simulated via Postman)
+
+---
+
+## **Branch Coverage**
+
+- **Coverage Tool:** JaCoCo 0.8.11
+- **Generate Locally:**
+
+```zsh
+mvn clean test jacoco:report
+open target/site/jacoco/index.html
+```
+
+- **Reports in CI:** JaCoCo HTML report is generated during CI runs and published as an artifact.
+- **Recorded Coverage (Service Only):**
+  - Branch coverage is at 84%, more than the rubric target
 
 ---
 
@@ -585,6 +631,8 @@ open target/site/checkstyle.html
 
 **Report Location:** `target/site/checkstyle.html`
 
+**CI Style Checks:** CI runs `mvn checkstyle:check` on PR merge to `main`; failures block merges until violations are fixed.
+
 ---
 
 ### **Static Analysis**
@@ -608,9 +656,16 @@ mvn pmd:pmd
 open target/site/pmd.html
 ```
 
-**Current Status:** 0 warnings in implemented code
+**Current Status:** 0 warnings in implemented code except a suppressed violation for the TradingApiApplication.java
 
 **Report Location:** `target/site/pmd.html`
+
+**Before/After Evidence:**
+- Historical reports are tracked under `reports/`:
+  - `reports/pmd-before.html` → initial findings (if any)
+  - `reports/pmd-after.html` → post-fix state (0 warnings)
+  - `reports/checkstyle-after.html` → style compliance
+- Summary: CI static analysis (PMD) and style checks (Checkstyle) run on every PR; identified issues were addressed prior to merge, reflected in the "after" reports.
 
 ---
 
