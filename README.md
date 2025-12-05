@@ -245,6 +245,98 @@ json
 
 ### **Accounts & Positions**
 
+#### **`POST /accounts/create`**
+
+Creates a new trading account with username and password authentication.
+
+**Request Body:**
+```json
+{
+  "name": "John Doe",
+  "username": "johndoe",
+  "password": "securepassword123"
+}
+```
+
+**Request:**
+```bash
+curl -X POST http://localhost:8080/accounts/create \
+  -H "Content-Type: application/json" \
+  -d '{"name":"John Doe","username":"johndoe","password":"securepassword123"}'
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "name": "John Doe",
+  "username": "johndoe",
+  "authToken": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+}
+```
+
+**Response Fields:**
+* `id`: Unique account identifier (UUID)
+* `name`: Display name of the account holder
+* `username`: Login username
+* `authToken`: API authentication token for future requests
+
+**Status Codes:**
+* `201 Created` - Account successfully created
+* `400 Bad Request` - Missing required fields (name, username, password)
+* `409 Conflict` - Username already exists
+* `500 Internal Server Error` - Server error during account creation
+
+**Notes:**
+* Password is hashed using SHA-256 before storage
+* Username must be unique across all accounts
+* Auth token is generated automatically and returned in response
+
+---
+
+#### **`POST /accounts/{accountId}/risk`**
+
+Updates risk limits for an existing account. Any omitted fields will preserve existing values.
+
+**Path Parameters:**
+* `accountId` (required, UUID) - Account identifier
+
+**Request Body:**
+```json
+{
+  "maxOrderQty": 1000,
+  "maxNotional": 100000.00,
+  "maxPositionQty": 10000
+}
+```
+
+**Request:**
+```bash
+curl -X POST http://localhost:8080/accounts/123e4567-e89b-12d3-a456-426614174000/risk \
+  -H "Content-Type: application/json" \
+  -d '{"maxOrderQty":1000,"maxNotional":100000.00,"maxPositionQty":10000}'
+```
+
+**Response (204 No Content):**
+Empty response body on success.
+
+**Request Body Fields (all optional):**
+* `maxOrderQty`: Maximum allowed order quantity per order
+* `maxNotional`: Maximum notional exposure allowed across positions
+* `maxPositionQty`: Maximum allowed position quantity per symbol
+
+**Status Codes:**
+* `204 No Content` - Risk limits successfully updated
+* `404 Not Found` - Account does not exist
+* `500 Internal Server Error` - Database error
+
+**Notes:**
+* Partial updates supported - only include fields you want to change
+* Omitted fields retain their current values
+* Risk limits are enforced during order validation
+
+---
+
 #### **`GET /accounts/{accountId}/positions`**
 
 Retrieves all open positions for a specific account.
@@ -596,12 +688,14 @@ To develop your own client for the Trading API:
 - `GET /health` - Service health check
 - `GET /market/quote/{symbol}` - Market data
 - `GET /audit/logs` - Audit log queries (with filters: `apiKey`, `accountId`, `path`, `from`, `to`, `page`, `pageSize`)
+- `POST /accounts/create` - Create new account
+- `POST /accounts/{accountId}/risk` - Update account risk limits
+- `GET /accounts/{accountId}/positions` - Get positions
+- `GET /accounts/{accountId}/pnl` - Get P&L
 - `POST /orders` - Submit orders
 - `GET /orders/{orderId}` - Get order details
 - `GET /orders/{orderId}/fills` - Get order fills
 - `POST /orders/{orderId}/cancel` - Cancel orders
-- `GET /accounts/{accountId}/positions` - Get positions
-- `GET /accounts/{accountId}/pnl` - Get P&L
 
 **4. Request/Response Format:**
 - Content-Type: `application/json`
