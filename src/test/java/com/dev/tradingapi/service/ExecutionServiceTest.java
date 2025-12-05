@@ -193,7 +193,8 @@ class ExecutionServiceTest {
     assertEquals(new BigDecimal("150.00"), result.getLimitPrice());
     assertEquals("GTC", result.getTimeInForce());
     // Should fill (limit price <= market price) - either FILLED or PARTIALLY_FILLED
-    assertTrue("FILLED".equals(result.getStatus()) || "PARTIALLY_FILLED".equals(result.getStatus()));
+    assertTrue("FILLED".equals(result.getStatus())
+            || "PARTIALLY_FILLED".equals(result.getStatus()));
     assertTrue(result.getFilledQty() > 0);
     verify(marketService, times(1)).getQuote("AAPL");
     verify(riskService, times(1)).validate(request, quote);
@@ -263,7 +264,8 @@ class ExecutionServiceTest {
     assertNotNull(result);
     assertEquals(0, result.getQty());
     assertEquals(0, result.getFilledQty());
-    assertEquals("WORKING", result.getStatus()); // Zero quantity = no fill, status should be WORKING
+    assertEquals("WORKING",
+            result.getStatus()); // Zero quantity = no fill, status should be WORKING
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -533,7 +535,8 @@ class ExecutionServiceTest {
     assertEquals("LIMIT", result.getType());
     assertEquals(new BigDecimal("155.00"), result.getLimitPrice());
     // Should fill (limit price >= market price)
-    assertTrue("FILLED".equals(result.getStatus()) || "PARTIALLY_FILLED".equals(result.getStatus()));
+    assertTrue("FILLED".equals(result.getStatus())
+            || "PARTIALLY_FILLED".equals(result.getStatus()));
     assertTrue(result.getFilledQty() > 0); // Should have some fills
     verify(marketService, times(1)).getQuote("AAPL");
   }
