@@ -693,7 +693,8 @@ class OrderServiceTest {
     assertEquals("LIMIT", result.getType());
     assertEquals(new BigDecimal("155.00"), result.getLimitPrice());
     // Should fill (limit price >= market price)
-    assertTrue("FILLED".equals(result.getStatus()) || "PARTIALLY_FILLED".equals(result.getStatus()));
+    assertTrue("FILLED".equals(result.getStatus())
+            || "PARTIALLY_FILLED".equals(result.getStatus()));
     assertTrue(result.getFilledQty() > 0);
     // Fill price should be limit price (better for trader)
     assertEquals(new BigDecimal("155.00"), result.getAvgFillPrice());

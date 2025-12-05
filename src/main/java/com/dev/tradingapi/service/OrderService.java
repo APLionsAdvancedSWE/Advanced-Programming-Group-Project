@@ -189,7 +189,7 @@ public class OrderService {
     List<Fill> fills = new ArrayList<>();
     BigDecimal price = mark.getLast();
     
-    int availableQty = calculateAvailableLiquidity(order, mark);
+    int availableQty = calculateAvailableLiquidity(mark);
     int fillQty = Math.min(availableQty, order.getQty());
     
     if (fillQty > 0) {
@@ -235,7 +235,7 @@ public class OrderService {
       return fills;
     }
     
-    int availableQty = calculateAvailableLiquidity(order, mark);
+    int availableQty = calculateAvailableLiquidity(mark);
     int fillQty = Math.min(availableQty, order.getQty());
     
     if (fillQty > 0) {
@@ -255,11 +255,10 @@ public class OrderService {
    * fill quantities. This ensures orders may receive partial fills or no fills when
    * market liquidity is limited.
    *
-   * @param order the order requesting liquidity
    * @param mark current market quote
    * @return available quantity at the price (between 50 and 10,000 shares)
    */
-  private int calculateAvailableLiquidity(Order order, Quote mark) {
+  private int calculateAvailableLiquidity(Quote mark) {
     long volume = mark.getVolume();
     int availableFromVolume = (int) (volume * 0.1);
     int minLiquidity = 50;
