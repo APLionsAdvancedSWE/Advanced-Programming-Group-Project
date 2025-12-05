@@ -96,6 +96,7 @@ Retrieves audit logs of all API requests with filtering and pagination support.
 **Query Parameters:**
 
 * `apiKey` (optional, string) \- Filter by API key
+* `accountId` (optional, string) \- Filter by account ID (UUID)
 * `path` (optional, string) \- Filter by request path (e.g., "/health")
 * `from` (optional, ISO-8601 timestamp) \- Start of date range
 * `to` (optional, ISO-8601 timestamp) \- End of date range
@@ -112,6 +113,9 @@ curl http://localhost:8080/audit/logs
 
 # Filter by path
 curl "http://localhost:8080/audit/logs?path=/health"
+
+# Filter by account ID
+curl "http://localhost:8080/audit/logs?accountId=123e4567-e89b-12d3-a456-426614174000"
 
 # Filter by date range
 curl "http://localhost:8080/audit/logs?from=2025-10-22T00:00:00Z&to=2025-10-23T23:59:59Z"
@@ -258,13 +262,6 @@ Creates a new trading account with username and password authentication.
 }
 ```
 
-**Request:**
-```bash
-curl -X POST http://localhost:8080/accounts/create \
-  -H "Content-Type: application/json" \
-  -d '{"name":"John Doe","username":"johndoe","password":"securepassword123"}'
-```
-
 **Response (201 Created):**
 ```json
 {
@@ -275,31 +272,9 @@ curl -X POST http://localhost:8080/accounts/create \
 }
 ```
 
-**Response Fields:**
-* `id`: Unique account identifier (UUID)
-* `name`: Display name of the account holder
-* `username`: Login username
-* `authToken`: API authentication token for future requests
-
-**Status Codes:**
-* `201 Created` - Account successfully created
-* `400 Bad Request` - Missing required fields (name, username, password)
-* `409 Conflict` - Username already exists
-* `500 Internal Server Error` - Server error during account creation
-
-**Notes:**
-* Password is hashed using SHA-256 before storage
-* Username must be unique across all accounts
-* Auth token is generated automatically and returned in response
-
----
-
 #### **`POST /accounts/{accountId}/risk`**
 
 Updates risk limits for an existing account. Any omitted fields will preserve existing values.
-
-**Path Parameters:**
-* `accountId` (required, UUID) - Account identifier
 
 **Request Body:**
 ```json
@@ -310,30 +285,8 @@ Updates risk limits for an existing account. Any omitted fields will preserve ex
 }
 ```
 
-**Request:**
-```bash
-curl -X POST http://localhost:8080/accounts/123e4567-e89b-12d3-a456-426614174000/risk \
-  -H "Content-Type: application/json" \
-  -d '{"maxOrderQty":1000,"maxNotional":100000.00,"maxPositionQty":10000}'
-```
-
 **Response (204 No Content):**
 Empty response body on success.
-
-**Request Body Fields (all optional):**
-* `maxOrderQty`: Maximum allowed order quantity per order
-* `maxNotional`: Maximum notional exposure allowed across positions
-* `maxPositionQty`: Maximum allowed position quantity per symbol
-
-**Status Codes:**
-* `204 No Content` - Risk limits successfully updated
-* `404 Not Found` - Account does not exist
-* `500 Internal Server Error` - Database error
-
-**Notes:**
-* Partial updates supported - only include fields you want to change
-* Omitted fields retain their current values
-* Risk limits are enforced during order validation
 
 ---
 
@@ -449,7 +402,7 @@ Submits a new trading order (MARKET, LIMIT, or TWAP).
 }
 ```
 
-**Response (200 OK):**
+**Response (201 Created):**
 ```json
 {
   "id": "order-uuid",
@@ -464,11 +417,15 @@ Submits a new trading order (MARKET, LIMIT, or TWAP).
 
 Retrieves order details by ID.
 
+#### **`GET /orders/by-client/{clientOrderId}`**
+
+Retrieves the most recent order matching the given client order ID.
+
 #### **`GET /orders/{orderId}/fills`**
 
 Retrieves all fills for an order.
 
-#### **`POST /orders/{orderId}/cancel`**
+#### **`POST /orders/{orderId}:cancel`**
 
 Cancels an active order.
 
@@ -694,8 +651,9 @@ To develop your own client for the Trading API:
 - `GET /accounts/{accountId}/pnl` - Get P&L
 - `POST /orders` - Submit orders
 - `GET /orders/{orderId}` - Get order details
+- `GET /orders/by-client/{clientOrderId}` - Get order by client order ID
 - `GET /orders/{orderId}/fills` - Get order fills
-- `POST /orders/{orderId}/cancel` - Cancel orders
+- `POST /orders/{orderId}:cancel` - Cancel orders
 
 **4. Request/Response Format:**
 - Content-Type: `application/json`
