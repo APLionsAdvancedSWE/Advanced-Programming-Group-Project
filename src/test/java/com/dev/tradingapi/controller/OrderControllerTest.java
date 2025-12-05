@@ -330,7 +330,7 @@ class OrderControllerTest {
 
   /**
    * Test canceling an active order successfully - typical valid case.
-   * Verifies POST /orders/{orderId}:cancel updates status.
+   * Verifies POST /orders/{orderId}/cancel updates status.
    */
   @Test
   void testCancel_ActiveOrder_Success_TypicalCase() {
