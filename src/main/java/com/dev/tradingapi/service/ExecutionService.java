@@ -7,6 +7,7 @@ import com.dev.tradingapi.model.Fill;
 import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.model.Quote;
+import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -28,6 +29,7 @@ public class ExecutionService {
   private final JdbcTemplate jdbcTemplate;
   private final MarketService marketService;
   private final RiskService riskService;
+  private final FillRepository fillRepository;
 
   /**
    * Constructs ExecutionService with required dependencies.
@@ -35,12 +37,14 @@ public class ExecutionService {
    * @param jdbcTemplate database operations
    * @param marketService market quotes
    * @param riskService order validation
+   * @param fillRepository repository for fill operations
    */
   public ExecutionService(JdbcTemplate jdbcTemplate, MarketService marketService,
-                         RiskService riskService) {
+                         RiskService riskService, FillRepository fillRepository) {
     this.jdbcTemplate = jdbcTemplate;
     this.marketService = marketService;
     this.riskService = riskService;
+    this.fillRepository = fillRepository;
   }
 
   /**
@@ -133,7 +137,7 @@ public class ExecutionService {
     if (fillQty > 0) {
       Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, fillPrice, now);
       fills.add(fill);
-      saveFill(fill);
+      fillRepository.save(fill);
     }
     
     return fills;
@@ -245,17 +249,6 @@ public class ExecutionService {
   }
 
   /**
-   * Saves a fill to the database.
-   *
-   * @param fill the fill to save
-   */
-  private void saveFill(Fill fill) {
-    String sql = "INSERT INTO fills (id, order_id, qty, price, ts) VALUES (?, ?, ?, ?, ?)";
-    jdbcTemplate.update(sql, fill.getId(), fill.getOrderId(), fill.getQty(),
-        fill.getPrice(), fill.getTs());
-  }
-
-  /**
    * Gets an order by ID.
    *
    * @param orderId order identifier
@@ -323,23 +316,6 @@ public class ExecutionService {
       order.setAvgFillPrice(rs.getBigDecimal("avg_fill_price"));
       order.setCreatedAt(rs.getTimestamp("created_at").toInstant());
       return order;
-    }
-  }
-
-  /**
-   * Row mapper for Fill objects.
-   */
-  private static class FillMapper implements RowMapper<Fill> {
-
-    @Override
-    public Fill mapRow(ResultSet rs, int rowNum) throws SQLException {
-      Fill fill = new Fill();
-      fill.setId(rs.getObject("id", UUID.class));
-      fill.setOrderId(rs.getObject("order_id", UUID.class));
-      fill.setQty(rs.getInt("qty"));
-      fill.setPrice(rs.getBigDecimal("price"));
-      fill.setTs(rs.getTimestamp("ts").toInstant());
-      return fill;
     }
   }
 

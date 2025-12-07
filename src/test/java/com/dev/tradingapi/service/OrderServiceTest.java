@@ -18,6 +18,7 @@ import com.dev.tradingapi.model.Fill;
 import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.model.Quote;
+import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.Arrays;
@@ -48,6 +49,9 @@ class OrderServiceTest {
   @Mock
   private RiskService riskService;
 
+  @Mock
+  private FillRepository fillRepository;
+
   private OrderService orderService;
 
   /**
@@ -56,7 +60,7 @@ class OrderServiceTest {
    */
   @BeforeEach
   void setUp() {
-    orderService = new OrderService(jdbcTemplate, marketService, riskService);
+    orderService = new OrderService(jdbcTemplate, marketService, riskService, fillRepository);
   }
 
   /**
@@ -84,10 +88,13 @@ class OrderServiceTest {
     // Mock risk validation to pass
     doNothing().when(riskService).validate(any(CreateOrderRequest.class), any(Quote.class));
 
-    // Mock JDBC operations for order, fill, and position persistence
+    // Mock JDBC operations for order and position persistence
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
         eq("AAPL"))).thenReturn(null); // No existing position
+
+    // Mock FillRepository
+    doNothing().when(fillRepository).save(any(Fill.class));
 
     // Act: Submit the order
     Order result = orderService.submit(req);
@@ -105,8 +112,9 @@ class OrderServiceTest {
     // Verify interactions: market data, risk check, and persistence
     verify(marketService, times(1)).getQuote("AAPL");
     verify(riskService, times(1)).validate(req, quote);
-    // 1 saveOrder + 1 saveFill + 1 savePosition + 1 updateOrder = 4 total
-    verify(jdbcTemplate, times(4)).update(anyString(), any(Object[].class));
+    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total (fill save is now in FillRepository)
+    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    verify(fillRepository, times(1)).save(any(Fill.class));
   }
 
   /**
@@ -139,6 +147,9 @@ class OrderServiceTest {
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
         eq("AMZN"))).thenReturn(null);
 
+    // Mock FillRepository
+    doNothing().when(fillRepository).save(any(Fill.class));
+
     // Act: Submit the TWAP order
     Order result = orderService.submit(req);
 
@@ -155,8 +166,10 @@ class OrderServiceTest {
     // position)
     // For TWAP with 105 shares: 10 slices (10 base + 5 remainder =
     // 11,11,11,11,11,10,10,10,10,10)
-    // 1 saveOrder + 10 saveFills + 1 savePosition + 1 updateOrder = 13 total
-    verify(jdbcTemplate, times(13)).update(anyString(), any(Object[].class));
+    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total
+    // (10 fill saves are now in FillRepository)
+    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    verify(fillRepository, times(10)).save(any(Fill.class));
   }
 
   /**
@@ -217,6 +230,7 @@ class OrderServiceTest {
         .thenReturn(existingPos);
 
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    doNothing().when(fillRepository).save(any(Fill.class));
 
     // Act: Submit order
     Order result = orderService.submit(req);
@@ -228,8 +242,9 @@ class OrderServiceTest {
 
     // Verify position update was called (existing position should be updated with
     // new fill)
-    // 1 saveOrder + 1 saveFill + 1 savePosition + 1 updateOrder = 4 total
-    verify(jdbcTemplate, times(4)).update(anyString(), any(Object[].class));
+    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total (fill save is now in FillRepository)
+    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    verify(fillRepository, times(1)).save(any(Fill.class));
   }
 
   /**
@@ -303,8 +318,7 @@ class OrderServiceTest {
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
         .thenReturn(mockOrder);
-    when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
-        .thenReturn(mockFills);
+    when(fillRepository.findByOrderId(orderId)).thenReturn(mockFills);
 
     // Act: Get fills for the order
     List<Fill> result = orderService.getFills(orderId);
@@ -316,7 +330,7 @@ class OrderServiceTest {
     assertEquals(50, result.get(1).getQty());
 
     verify(jdbcTemplate, times(1)).queryForObject(anyString(), any(RowMapper.class), eq(orderId));
-    verify(jdbcTemplate, times(1)).query(anyString(), any(RowMapper.class), eq(orderId));
+    verify(fillRepository, times(1)).findByOrderId(orderId);
   }
 
   /**
@@ -336,7 +350,7 @@ class OrderServiceTest {
     });
 
     // Verify fills query was never attempted
-    verify(jdbcTemplate, times(0)).query(anyString(), any(RowMapper.class), any(UUID.class));
+    verify(fillRepository, times(0)).findByOrderId(any(UUID.class));
   }
 
   /**
@@ -353,8 +367,7 @@ class OrderServiceTest {
 
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
         .thenReturn(mockOrder);
-    when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
-        .thenReturn(Arrays.asList());
+    when(fillRepository.findByOrderId(orderId)).thenReturn(Arrays.asList());
 
     // Act: Get fills
     List<Fill> result = orderService.getFills(orderId);
@@ -489,6 +502,7 @@ class OrderServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), eq("IBM")))
         .thenReturn(null);
+    doNothing().when(fillRepository).save(any(Fill.class));
 
     // Act: Submit small TWAP order
     Order result = orderService.submit(req);
@@ -499,8 +513,10 @@ class OrderServiceTest {
     assertEquals(3, result.getFilledQty());
 
     // Verify multiple fills were created (at least 2 for TWAP)
-    // 1 saveOrder + 3 saveFills + 1 savePosition + 1 updateOrder = 6 total
-    verify(jdbcTemplate, times(6)).update(anyString(), any(Object[].class));
+    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total
+    // (3 fill saves are now in FillRepository)
+    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    verify(fillRepository, times(3)).save(any(Fill.class));
   }
 
   /**
@@ -525,6 +541,7 @@ class OrderServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
         eq("AAPL"))).thenReturn(null);
+    doNothing().when(fillRepository).save(any(Fill.class));
 
     // Act: Write - submit order
     Order created = orderService.submit(req);
@@ -544,7 +561,7 @@ class OrderServiceTest {
 
     Fill f1 = new Fill(UUID.randomUUID(), orderId, 10, new BigDecimal("150.00"),
         Instant.now());
-    when(jdbcTemplate.query(anyString(), any(RowMapper.class), eq(orderId)))
+    when(fillRepository.findByOrderId(orderId))
         .thenReturn(Arrays.asList(f1));
 
     // Act: Read - get order and fills
@@ -562,8 +579,8 @@ class OrderServiceTest {
     // Verify write and read occurred (allowing for multiple lookups internally)
     verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
         .queryForObject(anyString(), any(RowMapper.class), eq(orderId));
-    verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
-        .query(anyString(), any(RowMapper.class), eq(orderId));
+    verify(fillRepository, org.mockito.Mockito.atLeastOnce())
+        .findByOrderId(eq(orderId));
   }
 
   /**
