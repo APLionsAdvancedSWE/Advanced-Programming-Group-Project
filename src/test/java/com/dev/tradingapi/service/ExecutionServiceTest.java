@@ -18,6 +18,7 @@ import com.dev.tradingapi.exception.NotFoundException;
 import com.dev.tradingapi.exception.RiskException;
 import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.model.Quote;
+import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
@@ -44,6 +45,9 @@ class ExecutionServiceTest {
   @Mock
   private RiskService riskService;
 
+  @Mock
+  private FillRepository fillRepository;
+
   private ExecutionService executionService;
 
   /**
@@ -51,7 +55,8 @@ class ExecutionServiceTest {
    */
   @BeforeEach
   void setUp() {
-    executionService = new ExecutionService(jdbcTemplate, marketService, riskService);
+    executionService = new ExecutionService(jdbcTemplate, marketService, riskService,
+        fillRepository);
   }
 
   /**
@@ -74,6 +79,7 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
     
     Order mockOrder = new Order();
@@ -101,7 +107,9 @@ class ExecutionServiceTest {
 
     verify(marketService, times(1)).getQuote("AAPL");
     verify(riskService, times(1)).validate(request, quote);
-    verify(jdbcTemplate, times(4)).update(anyString(), any(Object[].class)); 
+    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total (fill save is now in FillRepository)
+    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    verify(fillRepository, times(1)).save(any(com.dev.tradingapi.model.Fill.class)); 
 
   }
 
