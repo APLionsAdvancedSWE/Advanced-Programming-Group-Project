@@ -6,6 +6,7 @@ import com.dev.tradingapi.model.Fill;
 import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.model.Quote;
+import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
@@ -37,6 +38,7 @@ public class OrderService {
   private final JdbcTemplate jdbcTemplate;
   private final MarketService marketService;
   private final RiskService riskService;
+  private final FillRepository fillRepository;
 
   /**
    * Constructs the service.
@@ -44,12 +46,14 @@ public class OrderService {
    * @param jdbcTemplate  database access helper
    * @param marketService quote provider used for pricing fills
    * @param riskService   pre-trade risk validator
+   * @param fillRepository repository for fill operations
    */
   public OrderService(JdbcTemplate jdbcTemplate, MarketService marketService,
-      RiskService riskService) {
+      RiskService riskService, FillRepository fillRepository) {
     this.jdbcTemplate = jdbcTemplate;
     this.marketService = marketService;
     this.riskService = riskService;
+    this.fillRepository = fillRepository;
   }
 
   /**
@@ -155,8 +159,7 @@ public class OrderService {
   public List<Fill> getFills(UUID orderId) {
     // Ensure the order exists (throws 404 if not)
     getOrder(orderId);
-    String sql = "SELECT * FROM fills WHERE order_id = ? ORDER BY ts ASC";
-    return jdbcTemplate.query(sql, new FillMapper(), orderId);
+    return fillRepository.findByOrderId(orderId);
   }
 
   /**
@@ -194,7 +197,7 @@ public class OrderService {
     
     if (fillQty > 0) {
       Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, price, Instant.now());
-      saveFill(fill);
+      fillRepository.save(fill);
       fills.add(fill);
     }
     
@@ -240,7 +243,7 @@ public class OrderService {
     
     if (fillQty > 0) {
       Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, limitPrice, Instant.now());
-      saveFill(fill);
+      fillRepository.save(fill);
       fills.add(fill);
     }
     
@@ -285,7 +288,7 @@ public class OrderService {
         continue;
       }
       Fill f = new Fill(UUID.randomUUID(), order.getId(), q, price, now);
-      saveFill(f);
+      fillRepository.save(f);
       fills.add(f);
     }
     return fills;
@@ -367,15 +370,6 @@ public class OrderService {
   }
 
   /**
-   * Persists a new fill row.
-   */
-  private void saveFill(Fill fill) {
-    String sql = "INSERT INTO fills (id, order_id, qty, price, ts) VALUES (?, ?, ?, ?, ?)";
-    jdbcTemplate.update(sql, fill.getId(), fill.getOrderId(), fill.getQty(),
-        fill.getPrice(), fill.getTs());
-  }
-
-  /**
    * Fetches the current position for account+symbol, or null if absent.
    */
   private Position getPosition(UUID accountId, String symbol) {
@@ -426,20 +420,6 @@ public class OrderService {
       order.setAvgFillPrice(rs.getBigDecimal("avg_fill_price"));
       order.setCreatedAt(rs.getTimestamp("created_at").toInstant());
       return order;
-    }
-  }
-
-  /** Maps a row from the fills table to a Fill object. */
-  private static class FillMapper implements RowMapper<Fill> {
-    @Override
-    public Fill mapRow(ResultSet rs, int rowNum) throws SQLException {
-      Fill fill = new Fill();
-      fill.setId(rs.getObject("id", UUID.class));
-      fill.setOrderId(rs.getObject("order_id", UUID.class));
-      fill.setQty(rs.getInt("qty"));
-      fill.setPrice(rs.getBigDecimal("price"));
-      fill.setTs(rs.getTimestamp("ts").toInstant());
-      return fill;
     }
   }
 
