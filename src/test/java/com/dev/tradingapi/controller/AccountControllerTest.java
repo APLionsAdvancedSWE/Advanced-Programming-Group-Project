@@ -3,6 +3,7 @@ package com.dev.tradingapi.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -13,6 +14,7 @@ import com.dev.tradingapi.dto.AccountCreateRequest;
 import com.dev.tradingapi.dto.AccountCreateResponse;
 import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.repository.AccountRepository;
+import com.dev.tradingapi.service.AccountService;
 import com.dev.tradingapi.service.PnlService;
 import com.dev.tradingapi.service.PositionService;
 import java.math.BigDecimal;
@@ -42,11 +44,14 @@ class AccountControllerTest {
   @Mock
   private AccountRepository accountRepository;
 
+  private AccountService accountService;
+
   private AccountController accountController;
 
   @BeforeEach
   void setUp() {
-    accountController = new AccountController(pnlService, positionService, accountRepository);
+    accountService = new AccountService(accountRepository);
+    accountController = new AccountController(pnlService, positionService, accountService);
   }
 
   @Test
@@ -57,15 +62,17 @@ class AccountControllerTest {
     request.setPassword("s3cr3tPass!");
 
     when(accountRepository.findByUsername("testuser1")).thenReturn(Optional.empty());
-    when(accountRepository.save(anyString(), anyString(), anyString(), anyString()))
+    when(accountRepository.save(anyString(), anyString(), anyString(), anyString(),
+      org.mockito.ArgumentMatchers.any(BigDecimal.class)))
         .thenAnswer(invocation -> {
           UUID id = UUID.randomUUID();
           String name = invocation.getArgument(0);
           String username = invocation.getArgument(1);
           String authToken = invocation.getArgument(3);
-          return new com.dev.tradingapi.model.Account(id, name, authToken, 0,
+            return new com.dev.tradingapi.model.Account(id, name, authToken, 0,
               java.math.BigDecimal.ZERO, 0,
-              java.time.Instant.now(), java.math.BigDecimal.ZERO);
+              java.time.Instant.now(), java.math.BigDecimal.ZERO,
+              java.math.BigDecimal.ZERO);
         });
 
     ResponseEntity<AccountCreateResponse> response = accountController.createAccount(request);
@@ -92,7 +99,8 @@ class AccountControllerTest {
       assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
     }
 
-    verify(accountRepository, never()).save(anyString(), anyString(), anyString(), anyString());
+    verify(accountRepository, never())
+      .save(anyString(), anyString(), anyString(), anyString(), any());
   }
 
   @Test
@@ -151,10 +159,11 @@ class AccountControllerTest {
     request.setPassword("password");
 
     when(accountRepository.findByUsername("existing"))
-        .thenReturn(Optional.of(new com.dev.tradingapi.model.Account(
-            UUID.randomUUID(), "Existing User", "api-key", 0,
-            java.math.BigDecimal.ZERO, 0,
-            java.time.Instant.now(), java.math.BigDecimal.ZERO)));
+      .thenReturn(Optional.of(new com.dev.tradingapi.model.Account(
+        UUID.randomUUID(), "Existing User", "api-key", 0,
+        java.math.BigDecimal.ZERO, 0,
+        java.time.Instant.now(), java.math.BigDecimal.ZERO,
+        java.math.BigDecimal.ZERO)));
 
     try {
       accountController.createAccount(request);
@@ -162,7 +171,8 @@ class AccountControllerTest {
       assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
     }
 
-    verify(accountRepository, never()).save(anyString(), anyString(), anyString(), anyString());
+    verify(accountRepository, never())
+      .save(anyString(), anyString(), anyString(), anyString(), any());
   }
 
   @Test

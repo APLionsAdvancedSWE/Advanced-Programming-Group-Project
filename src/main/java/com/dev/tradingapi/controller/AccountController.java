@@ -4,7 +4,6 @@ import com.dev.tradingapi.dto.AccountCreateRequest;
 import com.dev.tradingapi.dto.AccountCreateResponse;
 import com.dev.tradingapi.dto.AccountRiskUpdateRequest;
 import com.dev.tradingapi.model.Position;
-import com.dev.tradingapi.repository.AccountRepository;
 import com.dev.tradingapi.service.AccountService;
 import com.dev.tradingapi.service.PnlService;
 import com.dev.tradingapi.service.PositionService;
@@ -44,22 +43,21 @@ public class AccountController {
 
   private final PnlService pnlService;
   private final PositionService positionService;
-  private final AccountRepository accountRepository;
   private final AccountService accountService;
 
   /**
    * Constructs a new {@code AccountController} with the required services.
    *
-  * @param pnlService service responsible for computing total PnL
-  * @param positionService service managing open positions per account
+   * @param pnlService service responsible for computing total PnL
+   * @param positionService service managing open positions per account
+   * @param accountService service providing account data and balances
    */
   public AccountController(PnlService pnlService,
-                  PositionService positionService,
-                  AccountRepository accountRepository) {
+                          PositionService positionService,
+                          AccountService accountService) {
     this.positionService = positionService;
     this.pnlService = pnlService;
-    this.accountRepository = accountRepository;
-    this.accountService = new AccountService(accountRepository);
+    this.accountService = accountService;
   }
 
   /**
@@ -78,19 +76,24 @@ public class AccountController {
               "Name, username, and password must be provided");
     }
 
-    accountRepository.findByUsername(request.getUsername()).ifPresent(a -> {
+    if (accountService.usernameExists(request.getUsername())) {
       throw new ResponseStatusException(HttpStatus.CONFLICT,
               "Username already exists");
-    });
+    }
 
     String passwordHash = hashPassword(request.getPassword());
 
-    String name = request.getName() != null && !request.getName().isBlank()
-            ? request.getName() : request.getUsername();
+        String name = request.getName() != null && !request.getName().isBlank()
+          ? request.getName() : request.getUsername();
+
+        BigDecimal initialBalance = request.getInitialBalance() != null
+          ? request.getInitialBalance()
+          : BigDecimal.ZERO;
 
     String authToken = UUID.randomUUID().toString();
 
-    var account = accountRepository.save(name, request.getUsername(), passwordHash, authToken);
+    var account = accountService.createAccount(name, request.getUsername(),
+      passwordHash, initialBalance, authToken);
 
     return ResponseEntity.status(HttpStatus.CREATED)
     .body(new AccountCreateResponse(account.getId(), name, request.getUsername(), authToken));

@@ -40,13 +40,55 @@ public class AccountService {
   }
 
   /**
+   * Checks whether an account already exists for the provided username.
+   *
+   * @param username username to check
+   * @return true if an account with this username exists, false otherwise
+   */
+  public boolean usernameExists(String username) {
+    return accountRepository.findByUsername(username).isPresent();
+  }
+
+  /**
+   * Creates and persists a new account with the given properties.
+   * The initial balance is also used as the starting cash balance.
+   *
+   * @param name display name for the account
+   * @param username login username
+   * @param passwordHash hashed password
+   * @param initialBalance starting cash balance
+   * @param authToken API authentication token
+   * @return the newly created Account
+   */
+  public Account createAccount(String name,
+                               String username,
+                               String passwordHash,
+                               BigDecimal initialBalance,
+                               String authToken) {
+    Account account = accountRepository.save(name, username, passwordHash, authToken,
+        initialBalance != null ? initialBalance : BigDecimal.ZERO);
+    save(account);
+    return account;
+  }
+
+  /**
    * Returns the account for the given ID.
    *
    * @param accountId the unique account ID
    * @return the Account object, or null if not found
    */
   public Account getById(UUID accountId) {
-    return accounts.get(accountId);
+    Account cached = accounts.get(accountId);
+    if (cached != null) {
+      return cached;
+    }
+
+    return accountRepository.findById(accountId)
+        .map(acc -> {
+          accounts.put(accountId, acc);
+          return acc;
+        })
+        .orElse(null);
   }
 
   /**
@@ -57,11 +99,13 @@ public class AccountService {
    * @param delta amount to add/subtract
    */
   public void adjustCash(UUID accountId, BigDecimal delta) {
-    Account a = accounts.get(accountId);
+    Account a = getById(accountId);
     if (a == null) {
       throw new IllegalArgumentException("Account not found: " + accountId);
     }
     a.adjustCashBalance(delta);
+    // Persist updated cash balance to the database.
+    accountRepository.updateCashBalance(accountId, a.getCashBalance());
   }
 
   /**

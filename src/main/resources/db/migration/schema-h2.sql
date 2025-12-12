@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   max_order_qty INT NOT NULL,
   max_notional NUMERIC(18,2) NOT NULL,
   max_position_qty INT NOT NULL,
+  initial_balance NUMERIC(18,4) NOT NULL DEFAULT 0,
+  cash_balance NUMERIC(18,4) NOT NULL DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
