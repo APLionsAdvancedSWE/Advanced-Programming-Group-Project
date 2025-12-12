@@ -1074,8 +1074,6 @@ class ExecutionServiceTest {
    */
   @Test
   void testCreateOrder_MultipleSellers_DifferentPrices_PriceTimePriority() {
-    UUID buyAccountId = UUID.randomUUID();
-    
     Quote quote = new Quote("AAPL", 
         new BigDecimal("150.00"), 
         new BigDecimal("155.00"), 
@@ -1119,14 +1117,18 @@ class ExecutionServiceTest {
 
     // Mock query to return both SELL orders (sorted by price ASC) - for findMatchingOrders
     // This handles the LIMIT BUY query: query(sql, mapper, "AAPL", 155.00)
-    lenient().when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
-        eq("AAPL"), any(BigDecimal.class))).thenReturn(List.of(sellOrder1, sellOrder2));
+    lenient().when(jdbcTemplate.query(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), 
+        eq("AAPL"), any(BigDecimal.class)))
+        .thenReturn(List.of(sellOrder1, sellOrder2));
     
     // Mock getOrderById calls that re-read orders during matching
     // This handles: query("SELECT * FROM orders WHERE id = ?", mapper, orderId)
-    lenient().when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+    lenient().when(jdbcTemplate.query(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), 
         eq(sellOrder1.getId()))).thenReturn(List.of(sellOrder1));
-    lenient().when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+    lenient().when(jdbcTemplate.query(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), 
         eq(sellOrder2.getId()))).thenReturn(List.of(sellOrder2));
     
     lenient().when(fillRepository.findByOrderId(sellOrder1.getId())).thenReturn(List.of());
@@ -1149,6 +1151,7 @@ class ExecutionServiceTest {
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(1);
 
+    UUID buyAccountId = UUID.randomUUID();
     CreateOrderRequest buyRequest = new CreateOrderRequest(
         buyAccountId, "CLIENT-106", "AAPL", "BUY", 100, "LIMIT", 
         new BigDecimal("155.00"), "DAY");
