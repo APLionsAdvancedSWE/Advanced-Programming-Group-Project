@@ -187,6 +187,7 @@ class OrderServiceTest {
     req.setType("MARKET");
 
     // Mock market service returning null (symbol not found)
+    // Mock market data returning null to simulate unavailable symbol
     when(marketService.getQuote("INVALID")).thenReturn(null);
 
     // Act & Assert: Verify exception is thrown with appropriate message
