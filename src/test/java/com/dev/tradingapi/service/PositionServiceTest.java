@@ -2,16 +2,35 @@ package com.dev.tradingapi.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.mockito.Mockito.when;
 
 import com.dev.tradingapi.model.Position;
+import com.dev.tradingapi.repository.PositionRepository;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+@ExtendWith(MockitoExtension.class)
 class PositionServiceTest {
 
-  private final PositionService positionService = new PositionService();
+  @Mock
+  private PositionRepository positionRepository;
+
+  private PositionService positionService;
+
+  @BeforeEach
+  void setUp() {
+    // For these unit tests we exercise the in-memory branch by
+    // ensuring the repository returns an empty list for any account.
+    positionService = new PositionService(positionRepository);
+    when(positionRepository.findByAccountId(org.mockito.ArgumentMatchers.any(UUID.class)))
+        .thenReturn(java.util.Collections.emptyList());
+  }
 
   @Test
   void applyFill_zeroQuantity_doesNothing() {

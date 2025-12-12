@@ -50,12 +50,12 @@ public class AccountController {
   /**
    * Constructs a new {@code AccountController} with the required services.
    *
-   * @param pnlService service responsible for computing total PnL
-   * @param positionService service managing open positions per account
+  * @param pnlService service responsible for computing total PnL
+  * @param positionService service managing open positions per account
    */
   public AccountController(PnlService pnlService,
-                          PositionService positionService,
-                          AccountRepository accountRepository) {
+                  PositionService positionService,
+                  AccountRepository accountRepository) {
     this.positionService = positionService;
     this.pnlService = pnlService;
     this.accountRepository = accountRepository;

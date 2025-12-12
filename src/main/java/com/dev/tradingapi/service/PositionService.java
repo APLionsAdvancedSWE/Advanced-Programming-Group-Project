@@ -1,6 +1,7 @@
 package com.dev.tradingapi.service;
 
 import com.dev.tradingapi.model.Position;
+import com.dev.tradingapi.repository.PositionRepository;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
@@ -24,10 +25,16 @@ import org.springframework.stereotype.Service;
 @Service
 public class PositionService {
 
-  /** In-memory map of positions by account -> symbol. */
+  /** In-memory map of positions by account -> symbol (used when DB has no rows). */
   private final Map<UUID, Map<String, Position>> positionsByAccount = new ConcurrentHashMap<>();
 
+  private final PositionRepository positionRepository;
+
   private static final int SCALE = 10;
+
+  public PositionService(PositionRepository positionRepository) {
+    this.positionRepository = positionRepository;
+  }
 
   /**
    * Returns all open positions for a given account.
@@ -36,6 +43,10 @@ public class PositionService {
    * @return list of open positions (empty if none)
    */
   public List<Position> getByAccountId(UUID accountId) {
+    List<Position> fromDb = positionRepository.findByAccountId(accountId);
+    if (fromDb != null && !fromDb.isEmpty()) {
+      return fromDb;
+    }
     return new ArrayList<>(positionsByAccount
             .getOrDefault(accountId, Collections.emptyMap())
             .values());
@@ -49,9 +60,16 @@ public class PositionService {
    * @return Position or null if none exists
    */
   public Position get(UUID accountId, String symbol) {
+    List<Position> fromDb = positionRepository.findByAccountId(accountId);
+    if (fromDb != null && !fromDb.isEmpty()) {
+      return fromDb.stream()
+        .filter(p -> symbol.equals(p.getSymbol()))
+        .findFirst()
+        .orElse(null);
+    }
     return positionsByAccount
-            .getOrDefault(accountId, Collections.emptyMap())
-            .get(symbol);
+      .getOrDefault(accountId, Collections.emptyMap())
+      .get(symbol);
   }
 
   /**
