@@ -11,6 +11,7 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -357,7 +358,8 @@ public class OrderService {
     jdbcTemplate.update(sql, order.getId(), order.getAccountId(), order.getClientOrderId(),
         order.getSymbol(), order.getSide(), order.getQty(), order.getType(),
         order.getLimitPrice(), order.getTimeInForce(), order.getStatus(),
-        order.getFilledQty(), order.getAvgFillPrice(), order.getCreatedAt());
+        order.getFilledQty(), order.getAvgFillPrice(),
+        Timestamp.from(order.getCreatedAt()));
   }
 
   /**

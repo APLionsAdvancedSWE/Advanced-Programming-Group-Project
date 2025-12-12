@@ -1,6 +1,7 @@
 package com.dev.tradingapi.repository;
 
 import com.dev.tradingapi.model.Fill;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,7 +43,7 @@ public class FillRepository {
   public void save(Fill fill) {
     String sql = "INSERT INTO fills (id, order_id, qty, price, ts) VALUES (?, ?, ?, ?, ?)";
     jdbcTemplate.update(sql, fill.getId(), fill.getOrderId(), fill.getQty(),
-        fill.getPrice(), fill.getTs());
+        fill.getPrice(), Timestamp.from(fill.getTs()));
   }
 
   /**
