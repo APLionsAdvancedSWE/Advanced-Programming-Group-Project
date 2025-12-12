@@ -747,7 +747,7 @@ class ExecutionServiceTest {
 
     // Use reflection to access private updateOrderStatus method
     Method updateOrderStatus = ExecutionService.class.getDeclaredMethod(
-        "updateOrderStatus", Order.class, List.class);
+        "updateOrderStatus", Order.class);
     updateOrderStatus.setAccessible(true);
 
     // Mock jdbcTemplate.update for updateOrder call
@@ -758,7 +758,7 @@ class ExecutionServiceTest {
     when(fillRepository.findByOrderId(order.getId())).thenReturn(fills);
 
     // Invoke the private method
-    updateOrderStatus.invoke(executionService, order, fills);
+    updateOrderStatus.invoke(executionService, order);
 
     assertEquals("PARTIALLY_FILLED", order.getStatus());
     assertEquals(40, order.getFilledQty());
@@ -787,7 +787,7 @@ class ExecutionServiceTest {
 
     // Use reflection to access private updateOrderStatus method
     Method updateOrderStatus = ExecutionService.class.getDeclaredMethod(
-        "updateOrderStatus", Order.class, List.class);
+        "updateOrderStatus", Order.class);
     updateOrderStatus.setAccessible(true);
 
     // Mock jdbcTemplate.update for updateOrder call
@@ -798,7 +798,7 @@ class ExecutionServiceTest {
     when(fillRepository.findByOrderId(order.getId())).thenReturn(fills);
 
     // Invoke the private method
-    updateOrderStatus.invoke(executionService, order, fills);
+    updateOrderStatus.invoke(executionService, order);
 
     assertEquals("FILLED", order.getStatus());
     assertEquals(100, order.getFilledQty());
@@ -820,11 +820,9 @@ class ExecutionServiceTest {
     order.setStatus("NEW");
     order.setFilledQty(0);
 
-    List<Fill> fills = List.of();
-
     // Use reflection to access private updateOrderStatus method
     Method updateOrderStatus = ExecutionService.class.getDeclaredMethod(
-        "updateOrderStatus", Order.class, List.class);
+        "updateOrderStatus", Order.class);
     updateOrderStatus.setAccessible(true);
 
     // Mock jdbcTemplate.update for updateOrder call
@@ -834,7 +832,8 @@ class ExecutionServiceTest {
     when(fillRepository.findByOrderId(order.getId())).thenReturn(List.of());
 
     // Invoke the private method
-    updateOrderStatus.invoke(executionService, order, fills);
+    List<Fill> fills = List.of();
+    updateOrderStatus.invoke(executionService, order);
 
     assertEquals("WORKING", order.getStatus());
     assertEquals(0, order.getFilledQty());
@@ -863,7 +862,7 @@ class ExecutionServiceTest {
 
     // Use reflection to access private updateOrderStatus method
     Method updateOrderStatus = ExecutionService.class.getDeclaredMethod(
-        "updateOrderStatus", Order.class, List.class);
+        "updateOrderStatus", Order.class);
     updateOrderStatus.setAccessible(true);
 
     // CRITICAL: The method reads from database, not from parameter
@@ -873,7 +872,7 @@ class ExecutionServiceTest {
 
     // Invoke the private method - should throw IllegalStateException
     Exception exception = assertThrows(Exception.class, 
-        () -> updateOrderStatus.invoke(executionService, order, fills));
+        () -> updateOrderStatus.invoke(executionService, order));
     
     // The exception is wrapped in InvocationTargetException, get the cause
     assertTrue(exception.getCause() instanceof IllegalStateException);
@@ -883,8 +882,9 @@ class ExecutionServiceTest {
   // ========== Matching Algorithm Scenario Tests ==========
 
   /**
-   * Scenario 1a: First BUY LIMIT order (empty order book) - executes at market price.
-   * BUY 100 AAPL @ 150 (LIMIT) with no SELL orders in system - uses market price for bootstrapping.
+   * Scenario 1a: First BUY LIMIT order (empty order book) - stays WORKING.
+   * BUY 100 AAPL @ 150 (LIMIT) with no SELL orders in system.
+   * LIMIT orders do NOT bootstrap - only MARKET BUY orders bootstrap.
    */
   @Test
   void testCreateOrder_BuyLimit_FirstOrder_ExecutesAtMarketPrice() {
@@ -927,6 +927,7 @@ class ExecutionServiceTest {
     assertEquals(0, result.getFilledQty());
     assertEquals(null, result.getAvgFillPrice());
     verify(marketService, times(1)).getQuote("AAPL");
+    verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
   }
 
@@ -1078,14 +1079,6 @@ class ExecutionServiceTest {
    */
   @Test
   void testCreateOrder_MultipleSellers_DifferentPrices_PriceTimePriority() {
-    UUID buyAccountId = UUID.randomUUID();
-    UUID sellAccountId1 = UUID.randomUUID();
-    UUID sellAccountId2 = UUID.randomUUID();
-    
-    CreateOrderRequest buyRequest = new CreateOrderRequest(
-        buyAccountId, "CLIENT-106", "AAPL", "BUY", 100, "LIMIT", 
-        new BigDecimal("155.00"), "DAY");
-    
     Quote quote = new Quote("AAPL", 
         new BigDecimal("150.00"), 
         new BigDecimal("155.00"), 
@@ -1098,6 +1091,8 @@ class ExecutionServiceTest {
     doNothing().when(riskService).validate(any(CreateOrderRequest.class), eq(quote));
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
+    
+    UUID sellAccountId1 = UUID.randomUUID();
     
     // Create two resting SELL orders with different prices
     Order sellOrder1 = new Order();
@@ -1112,6 +1107,7 @@ class ExecutionServiceTest {
     sellOrder1.setType("LIMIT");
     sellOrder1.setCreatedAt(Instant.now().minusSeconds(10)); // Earlier
 
+    UUID sellAccountId2 = UUID.randomUUID();
     Order sellOrder2 = new Order();
     sellOrder2.setId(UUID.randomUUID());
     sellOrder2.setAccountId(sellAccountId2);
@@ -1165,6 +1161,10 @@ class ExecutionServiceTest {
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(1);
 
+    UUID buyAccountId = UUID.randomUUID();
+    CreateOrderRequest buyRequest = new CreateOrderRequest(
+        buyAccountId, "CLIENT-106", "AAPL", "BUY", 100, "LIMIT", 
+        new BigDecimal("155.00"), "DAY");
     Order buyOrder = executionService.createOrder(buyRequest);
 
     assertEquals("FILLED", buyOrder.getStatus());

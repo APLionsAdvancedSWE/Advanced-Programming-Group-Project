@@ -65,6 +65,17 @@ public class ExecutionService {
 
     riskService.validate(req, mark);
 
+    // Validate order type and limitPrice combination
+    // MARKET orders should not have a limitPrice (they execute at best available price)
+    // LIMIT orders must have a limitPrice
+    if ("MARKET".equalsIgnoreCase(req.getType()) && req.getLimitPrice() != null) {
+      // MARKET orders ignore limitPrice - set to null
+      // This is more forgiving than rejecting the order
+    }
+    if ("LIMIT".equalsIgnoreCase(req.getType()) && req.getLimitPrice() == null) {
+      throw new IllegalArgumentException("LIMIT orders must specify a limitPrice");
+    }
+
     Order order = new Order();
     order.setId(UUID.randomUUID());
     order.setAccountId(req.getAccountId());
@@ -73,7 +84,9 @@ public class ExecutionService {
     order.setSide(req.getSide());
     order.setQty(req.getQty());
     order.setType(req.getType());
-    order.setLimitPrice(req.getLimitPrice());
+    // MARKET orders: set limitPrice to null (ignore any provided value)
+    // LIMIT orders: use the provided limitPrice
+    order.setLimitPrice("MARKET".equalsIgnoreCase(req.getType()) ? null : req.getLimitPrice());
     order.setTimeInForce(req.getTimeInForce());
     order.setStatus("NEW");
     order.setFilledQty(0);
@@ -206,6 +219,7 @@ public class ExecutionService {
       Fill restingFill = new Fill(
           UUID.randomUUID(),
           currentRestingOrder.getId(),
+          currentRestingOrder.getId(),
           fillQty,
           executionPrice,
           now
@@ -328,6 +342,7 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND (qty - filled_qty) > 0 "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price ASC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
@@ -340,6 +355,7 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND limit_price <= ? "
+                + "AND (qty - filled_qty) > 0 "
                 + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price ASC, created_at ASC",
             new OrderMapper(),
@@ -356,6 +372,7 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND (qty - filled_qty) > 0 "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price DESC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
@@ -368,6 +385,7 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND limit_price >= ? "
+                + "AND (qty - filled_qty) > 0 "
                 + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price DESC, created_at ASC",
             new OrderMapper(),
@@ -399,17 +417,14 @@ public class ExecutionService {
    * Used to determine if this is the first order (bootstrapping scenario).
    *
    * @param symbol the trading symbol
-   * @param side the order side (BUY or SELL)
-   * @return true if no orders of opposite side exist, false otherwise
+   * @return true if no orders exist for this symbol, false otherwise
    */
-  private boolean isOrderBookEmpty(String symbol, String side) {
-    String oppositeSide = "BUY".equalsIgnoreCase(side) ? "SELL" : "BUY";
-    String sql = "SELECT COUNT(*) FROM orders "
-        + "WHERE symbol = ? "
-        + "AND side = ? "
-        + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED')";
-    
-    Integer count = jdbcTemplate.queryForObject(sql, Integer.class, symbol, oppositeSide);
+  private boolean isCompletelyEmptyBook(String symbol) {
+    Integer count = jdbcTemplate.queryForObject(
+        "SELECT COUNT(*) FROM orders WHERE symbol = ?",
+        Integer.class,
+        symbol
+    );
     return count == null || count == 0;
   }
 
@@ -420,10 +435,9 @@ public class ExecutionService {
    * @param order the resting order that was matched
    */
   private void updateRestingOrderStatus(Order order) {
-    if (order.getFilledQty() == 0) {
-      order.setStatus("WORKING");
-      order.setAvgFillPrice(null);
-    } else if (order.getFilledQty() < order.getQty()) {
+    // After matching, the order should have fills, so filledQty > 0
+    // If somehow filledQty is 0, keep the current status (shouldn't happen after a match)
+    if (order.getFilledQty() < order.getQty()) {
       order.setStatus("PARTIALLY_FILLED");
     } else {
       order.setStatus("FILLED");
@@ -525,9 +539,8 @@ public class ExecutionService {
    * - Average fill price calculation across multiple fills
    *
    * @param order the order to update (may already have some fills from previous matches)
-   * @param fills list of NEW fills from this execution (may be empty)
    */
-  private void updateOrderStatus(Order order, List<Fill> newFills) {
+  private void updateOrderStatus(Order order) {
     // Fills are ALREADY saved to DB at this point (saved in generateFills)
     // Use database as the single source of truth
     List<Fill> allFills = fillRepository.findByOrderId(order.getId());
@@ -569,9 +582,10 @@ public class ExecutionService {
 
     updateOrder(order);
   }
+
   /**
    * Recalculates the average fill price for an order from all its fills in the database.
-   * 
+   *
    * @param order the order to recalculate average fill price for
    */
   private void recalculateAverageFillPrice(Order order) {
@@ -586,6 +600,23 @@ public class ExecutionService {
             totalCost.divide(BigDecimal.valueOf(totalFilled), RoundingMode.HALF_UP)
         );
       }
+    }
+  }
+
+  /**
+   * Retrieves an order by its ID from the database.
+   * Returns null if the order doesn't exist.
+   *
+   * @param orderId the order identifier
+   * @return the order if found, null otherwise
+   */
+  private Order getOrderById(UUID orderId) {
+    String sql = "SELECT * FROM orders WHERE id = ?";
+    try {
+      List<Order> orders = jdbcTemplate.query(sql, new OrderMapper(), orderId);
+      return orders.isEmpty() ? null : orders.get(0);
+    } catch (Exception e) {
+      return null;
     }
   }
 
