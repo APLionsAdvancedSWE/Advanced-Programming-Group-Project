@@ -40,6 +40,7 @@ public class OrderService {
   private final MarketService marketService;
   private final RiskService riskService;
   private final FillRepository fillRepository;
+  private final AccountService accountService;
 
   /**
    * Constructs the service.
@@ -48,13 +49,16 @@ public class OrderService {
    * @param marketService quote provider used for pricing fills
    * @param riskService   pre-trade risk validator
    * @param fillRepository repository for fill operations
+   * @param accountService service managing account balances
    */
-  public OrderService(JdbcTemplate jdbcTemplate, MarketService marketService,
-      RiskService riskService, FillRepository fillRepository) {
+    public OrderService(JdbcTemplate jdbcTemplate, MarketService marketService,
+      RiskService riskService, FillRepository fillRepository,
+      AccountService accountService) {
     this.jdbcTemplate = jdbcTemplate;
     this.marketService = marketService;
     this.riskService = riskService;
     this.fillRepository = fillRepository;
+    this.accountService = accountService;
   }
 
   /**
@@ -112,10 +116,36 @@ public class OrderService {
       fills = generateMarketFill(order, mark);
     }
 
-    // 5) update positions and order status based on fills
+    // 5) update cash balance, positions, and order status based on fills
+    updateCashBalance(order.getAccountId(), order.getSide(), fills);
     updatePositions(order.getAccountId(), order.getSide(), order.getSymbol(), fills);
     updateOrderStatus(order, fills);
     return order;
+  }
+
+  /**
+   * Updates the account cash balance based on the executed fills.
+   *
+   * <p>BUY orders reduce cash (debit), SELL orders increase cash (credit).
+   * The adjustment is the signed notional: sum(price × qty) with sign
+   * -1 for BUY and +1 for SELL.</p>
+   */
+  private void updateCashBalance(UUID accountId, String side, List<Fill> fills) {
+    if (fills == null || fills.isEmpty()) {
+      return;
+    }
+
+    int sign = "SELL".equalsIgnoreCase(side) ? 1 : -1;
+    BigDecimal totalNotional = fills.stream()
+        .map(f -> f.getPrice().multiply(BigDecimal.valueOf(f.getQty())))
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+    if (totalNotional.compareTo(BigDecimal.ZERO) == 0) {
+      return;
+    }
+
+    BigDecimal delta = totalNotional.multiply(BigDecimal.valueOf(sign));
+    accountService.adjustCash(accountId, delta);
   }
 
   /**

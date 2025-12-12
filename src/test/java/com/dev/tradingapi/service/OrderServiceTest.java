@@ -52,6 +52,9 @@ class OrderServiceTest {
   @Mock
   private FillRepository fillRepository;
 
+  @Mock
+  private AccountService accountService;
+
   private OrderService orderService;
 
   /**
@@ -60,7 +63,8 @@ class OrderServiceTest {
    */
   @BeforeEach
   void setUp() {
-    orderService = new OrderService(jdbcTemplate, marketService, riskService, fillRepository);
+    orderService = new OrderService(jdbcTemplate, marketService, riskService,
+        fillRepository, accountService);
   }
 
   /**
