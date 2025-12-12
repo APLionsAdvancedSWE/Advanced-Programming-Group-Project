@@ -115,7 +115,7 @@ class AuditLoggingFilterTest {
     when(request.getHeader("X-API-Key")).thenReturn("test-key");
     when(request.getMethod()).thenReturn("POST");
     when(request.getRequestURI())
-        .thenReturn("/orders/" + java.util.UUID.randomUUID() + ":cancel");
+        .thenReturn("/orders/" + java.util.UUID.randomUUID() + "/cancel");
     when(response.getStatus()).thenReturn(200);
 
     auditLoggingFilter.doFilter(request, response, filterChain);
