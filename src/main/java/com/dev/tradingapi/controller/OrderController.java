@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
  * POST /orders — create a new order (MARKET or TWAP)
  * GET /orders/{orderId} — fetch a specific order
  * GET /orders/{orderId}/fills — list fills for an order
- * POST /orders/{orderId}:cancel — cancel an active order
+ * POST /orders/{orderId}/cancel — cancel an active order
  */
 @RestController
 @RequestMapping("/orders")
@@ -99,7 +99,7 @@ public class OrderController {
    * @return the updated order (CANCELLED if success, unchanged if already
    *         terminal)
    */
-  @PostMapping("/{orderId}:cancel")
+  @PostMapping("/{orderId}/cancel")
   public ResponseEntity<Order> cancel(@PathVariable("orderId") UUID orderId) {
     Order cancelled = orderService.cancel(orderId);
     return ResponseEntity.ok(cancelled);
