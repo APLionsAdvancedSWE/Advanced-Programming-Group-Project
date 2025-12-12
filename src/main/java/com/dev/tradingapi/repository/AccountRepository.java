@@ -1,6 +1,7 @@
 package com.dev.tradingapi.repository;
 
 import com.dev.tradingapi.model.Account;
+import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,7 +24,8 @@ public class AccountRepository {
       rs.getBigDecimal("max_notional"),
       rs.getInt("max_position_qty"),
       rs.getTimestamp("created_at").toInstant(),
-      rs.getBigDecimal("max_notional")
+      rs.getBigDecimal("initial_balance"),
+      rs.getBigDecimal("cash_balance")
   );
 
   /**
@@ -53,17 +55,19 @@ public class AccountRepository {
    * @param username login username
    * @param passwordHash hashed password for authentication
    * @param authToken API authentication token issued for the account
-   * @return the newly created {@link Account}
+     * @return the newly created {@link Account}
    */
-  public Account save(String name, String username, String passwordHash, String authToken) {
+    public Account save(String name, String username, String passwordHash,
+            String authToken, BigDecimal initialBalance) {
     UUID id = UUID.randomUUID();
     String sql = "INSERT INTO accounts (id, name, auth_token, username, password_hash,"
-            + " max_order_qty, max_notional, max_position_qty, created_at) "
-            + "VALUES (?, ?, ?, ?, ?, 0, 0, 0, CURRENT_TIMESTAMP)";
-    jdbcTemplate.update(sql, id, name, authToken, username, passwordHash);
+        + " max_order_qty, max_notional, max_position_qty, initial_balance, cash_balance, created_at) "
+        + "VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, CURRENT_TIMESTAMP)";
+    BigDecimal init = initialBalance != null ? initialBalance : BigDecimal.ZERO;
+    jdbcTemplate.update(sql, id, name, authToken, username, passwordHash, init, init);
     return new Account(id, name, authToken, 0,
-    java.math.BigDecimal.ZERO, 0,
-    java.time.Instant.now(), java.math.BigDecimal.ZERO);
+        BigDecimal.ZERO, 0,
+        java.time.Instant.now(), init, init);
   }
 
   /**
@@ -91,6 +95,17 @@ public class AccountRepository {
     String sql = "UPDATE accounts SET max_order_qty = ?, max_notional = ?, max_position_qty = ? "
         + "WHERE id = ?";
     jdbcTemplate.update(sql, maxOrderQty, maxNotional, maxPositionQty, accountId);
+  }
+
+  /**
+   * Persists an updated cash balance for the specified account.
+   *
+   * @param accountId account identifier
+   * @param cashBalance new cash balance value
+   */
+  public void updateCashBalance(UUID accountId, BigDecimal cashBalance) {
+    String sql = "UPDATE accounts SET cash_balance = ? WHERE id = ?";
+    jdbcTemplate.update(sql, cashBalance, accountId);
   }
 }
 

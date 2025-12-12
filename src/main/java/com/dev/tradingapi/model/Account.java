@@ -26,12 +26,15 @@ public class Account {
   * @param authToken authentication token for the account
    * @param maxOrderQty max quantity per order
    * @param maxNotional max dollar value per order
-   * @param maxPositionQty max total position size
-   * @param createdAt creation timestamp
+  * @param maxPositionQty max total position size
+  * @param createdAt creation timestamp
+  * @param initialBalance starting equity for the account
+  * @param cashBalance current cash balance for the account
    */
   public Account(UUID id, String name, String authToken, int maxOrderQty,
-                 BigDecimal maxNotional, int maxPositionQty,
-                 Instant createdAt, BigDecimal initialBalance) {
+            BigDecimal maxNotional, int maxPositionQty,
+            Instant createdAt, BigDecimal initialBalance,
+            BigDecimal cashBalance) {
     this.id = id;
     this.name = name;
     this.authToken = authToken;
@@ -40,7 +43,7 @@ public class Account {
     this.maxPositionQty = maxPositionQty;
     this.createdAt = createdAt;
     this.initialBalance = initialBalance;
-    this.cashBalance = initialBalance;
+    this.cashBalance = cashBalance;
   }
 
   /**

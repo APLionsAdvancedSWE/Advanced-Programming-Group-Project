@@ -45,14 +45,15 @@ class PnlServiceTest {
     pnlService = new PnlService(marketService, accountService, positionService);
     accountId = UUID.randomUUID();
     testAccount = new Account(
-        accountId,
-        "Test Account",
-        "test-api-key",
-        1000,
-        new BigDecimal("100000"),
-        5000,
-        Instant.now(),
-        new BigDecimal("10000.00")
+      accountId,
+      "Test Account",
+      "test-api-key",
+      1000,
+      new BigDecimal("100000"),
+      5000,
+      Instant.now(),
+      new BigDecimal("10000.00"),
+      new BigDecimal("10000.00")
     );
   }
 

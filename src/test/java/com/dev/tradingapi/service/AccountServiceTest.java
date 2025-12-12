@@ -21,7 +21,7 @@ class AccountServiceTest {
   void saveAndGetById_storeAccountInMemory() {
     UUID id = UUID.randomUUID();
     Account account = new Account(id, "Test", "token", 1,
-        BigDecimal.TEN, 5, java.time.Instant.now(), BigDecimal.ZERO);
+        BigDecimal.TEN, 5, java.time.Instant.now(), BigDecimal.ZERO, BigDecimal.ZERO);
 
     accountService.save(account);
 
@@ -42,7 +42,7 @@ class AccountServiceTest {
   void adjustCash_updatesExistingAccountBalance() {
     UUID id = UUID.randomUUID();
     Account account = new Account(id, "Test", "token", 1,
-        BigDecimal.TEN, 5, java.time.Instant.now(), BigDecimal.ZERO);
+        BigDecimal.TEN, 5, java.time.Instant.now(), BigDecimal.ZERO, BigDecimal.ZERO);
 
     accountService.save(account);
     accountService.adjustCash(id, BigDecimal.TEN);
@@ -54,7 +54,7 @@ class AccountServiceTest {
   void updateRiskLimits_usesInMemoryAccountWhenPresent() {
     UUID id = UUID.randomUUID();
     Account account = new Account(id, "Test", "token", 1,
-        BigDecimal.ONE, 1, java.time.Instant.now(), BigDecimal.ZERO);
+        BigDecimal.ONE, 1, java.time.Instant.now(), BigDecimal.ZERO, BigDecimal.ZERO);
 
     accountService.save(account);
 
@@ -71,7 +71,7 @@ class AccountServiceTest {
   void updateRiskLimits_loadsFromRepositoryWhenNotInMemory() {
     UUID id = UUID.randomUUID();
     Account fromDb = new Account(id, "Db", "token", 2,
-        BigDecimal.valueOf(100), 3, java.time.Instant.now(), BigDecimal.ZERO);
+        BigDecimal.valueOf(100), 3, java.time.Instant.now(), BigDecimal.ZERO, BigDecimal.ZERO);
 
     Mockito.when(accountRepository.findById(id)).thenReturn(Optional.of(fromDb));
 
@@ -82,6 +82,6 @@ class AccountServiceTest {
     assertEquals(3, updated.getMaxPositionQty());
 
     Mockito.verify(accountRepository)
-        .updateRiskLimits(id, 2, BigDecimal.valueOf(100), 3);
+      .updateRiskLimits(id, 2, BigDecimal.valueOf(100), 3);
   }
 }
