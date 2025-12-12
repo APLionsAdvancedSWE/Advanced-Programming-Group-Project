@@ -83,7 +83,7 @@ public class ExecutionService {
     saveOrder(order);
 
     List<Fill> fills = generateFills(order, mark);
-    updatePositions(order.getAccountId(), fills);
+    updatePositions(order, fills);
     updateOrderStatus(order, fills);
 
     return order;
@@ -108,41 +108,87 @@ public class ExecutionService {
    */
   private List<Fill> generateFills(Order order, Quote mark) {
     List<Fill> fills = new ArrayList<>();
-    BigDecimal currentPrice = mark.getLast();
+    BigDecimal marketPrice = mark.getLast();
     Instant now = Instant.now();
-    
-    int fillQty = 0;
-    BigDecimal fillPrice = currentPrice;
-    
+  
+    // Determine execution price (LIMIT vs MARKET)
+    BigDecimal executionPrice = marketPrice;
+  
     if ("LIMIT".equalsIgnoreCase(order.getType()) && order.getLimitPrice() != null) {
-      BigDecimal limitPrice = order.getLimitPrice();
-      boolean priceAcceptable = false;
-      
-      if ("BUY".equalsIgnoreCase(order.getSide())) {
-        priceAcceptable = limitPrice.compareTo(currentPrice) >= 0;
-      } else if ("SELL".equalsIgnoreCase(order.getSide())) {
-        priceAcceptable = limitPrice.compareTo(currentPrice) <= 0;
-      }
-      
+      BigDecimal limit = order.getLimitPrice();
+      boolean priceAcceptable =
+          ("BUY".equalsIgnoreCase(order.getSide()) && limit.compareTo(marketPrice) >= 0)
+       || ("SELL".equalsIgnoreCase(order.getSide()) && limit.compareTo(marketPrice) <= 0);
+  
       if (!priceAcceptable) {
         return fills;
       }
-      
-      fillPrice = limitPrice;
+      executionPrice = limit;
     }
-    
+  
+    // --- TWAP execution ---
+    if ("TWAP".equalsIgnoreCase(order.getType())) {
+      // TWAP always uses market price, not limit price
+      BigDecimal twapPrice = marketPrice;
+      int totalQty = order.getQty();
+      int slices = Math.min(10, totalQty);
+      int baseSliceQty = totalQty / slices;
+      int remainder = totalQty % slices;
+  
+      int remainingQty = totalQty;
+  
+      for (int i = 0; i < slices && remainingQty > 0; i++) {
+        int sliceQty = baseSliceQty + (i < remainder ? 1 : 0);
+
+        sliceQty = Math.min(sliceQty, remainingQty);
+  
+        int availableLiquidity = calculateAvailableLiquidity(mark);
+        int fillQty = Math.min(sliceQty, availableLiquidity);
+  
+        if (fillQty <= 0) {
+          break;
+        }
+  
+        Fill fill = new Fill(
+            UUID.randomUUID(),
+            order.getId(),
+            fillQty,
+            twapPrice,
+            now.plusSeconds(i) 
+        );
+  
+        fills.add(fill);
+        fillRepository.save(fill);
+  
+        remainingQty -= fillQty;
+  
+        if (fillQty < sliceQty) {
+          break;
+        }
+      }
+  
+      return fills;
+    }
+  
+    // --- MARKET / LIMIT (single-shot) ---
     int availableQty = calculateAvailableLiquidity(mark);
-    fillQty = Math.min(availableQty, order.getQty());
-    
+    int fillQty = Math.min(availableQty, order.getQty());
+  
     if (fillQty > 0) {
-      Fill fill = new Fill(UUID.randomUUID(), order.getId(), fillQty, fillPrice, now);
+      Fill fill = new Fill(
+          UUID.randomUUID(),
+          order.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
       fills.add(fill);
       fillRepository.save(fill);
     }
-    
+  
     return fills;
   }
-
+  
   /**
    * Calculates available liquidity at the current price.
    * 
@@ -168,22 +214,26 @@ public class ExecutionService {
    * @param accountId account identifier
    * @param fills list of fills to process
    */
-  private void updatePositions(UUID accountId, List<Fill> fills) {
-    for (Fill fill : fills) {
-      // Get the order to find the symbol
-      Order order = getOrder(fill.getOrderId());
-      String symbol = order.getSymbol();
-      
-      Position existing = getPosition(accountId, symbol);
-      if (existing == null) {
-        existing = new Position(accountId, symbol, 0, BigDecimal.ZERO);
-      }
-
-      existing.updateWithFill(fill.getQty(), fill.getPrice());
-      savePosition(existing);
+  private void updatePositions(Order order, List<Fill> fills) {
+    UUID accountId = order.getAccountId();
+    String symbol = order.getSymbol();
+  
+    Position position = getPosition(accountId, symbol);
+    if (position == null) {
+      position = new Position(accountId, symbol, 0, BigDecimal.ZERO);
     }
+  
+    for (Fill fill : fills) {
+      int signedQty = "SELL".equalsIgnoreCase(order.getSide())
+          ? -fill.getQty()
+          : fill.getQty();
+  
+      position.updateWithFill(signedQty, fill.getPrice());
+    }
+  
+    savePosition(position);
   }
-
+  
   /**
    * Updates order status based on fills.
    * 
@@ -198,26 +248,35 @@ public class ExecutionService {
    */
   private void updateOrderStatus(Order order, List<Fill> fills) {
     int totalFilled = fills.stream().mapToInt(Fill::getQty).sum();
-    BigDecimal totalCost = fills.stream()
-        .map(fill -> fill.getPrice().multiply(BigDecimal.valueOf(fill.getQty())))
-        .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-    order.setFilledQty(totalFilled);
-    if (totalFilled > 0) {
-      order.setAvgFillPrice(totalCost.divide(BigDecimal.valueOf(totalFilled),
-          RoundingMode.HALF_UP));
+  
+    if (totalFilled > order.getQty()) {
+      throw new IllegalStateException("Order overfilled");
     }
-
+  
+    order.setFilledQty(totalFilled);
+  
     if (totalFilled == 0) {
-      if ("NEW".equals(order.getStatus())) {
-        order.setStatus("WORKING");
-      }
-    } else if (totalFilled >= order.getQty()) {
+      order.setStatus("WORKING");
+      order.setAvgFillPrice(null);
+      updateOrder(order);
+      return;
+    }
+  
+    BigDecimal totalCost = fills.stream()
+        .map(f -> f.getPrice().multiply(BigDecimal.valueOf(f.getQty())))
+        .reduce(BigDecimal.ZERO, BigDecimal::add);
+  
+    order.setAvgFillPrice(
+        totalCost.divide(BigDecimal.valueOf(totalFilled), RoundingMode.HALF_UP)
+    );
+  
+    // Use >= for defensive check (though overfill is already checked above)
+    if (totalFilled >= order.getQty()) {
       order.setStatus("FILLED");
     } else {
       order.setStatus("PARTIALLY_FILLED");
     }
-
+  
     updateOrder(order);
   }
 
