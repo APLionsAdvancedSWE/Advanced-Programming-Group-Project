@@ -299,6 +299,12 @@ public class MarketService {
       return null;
     }
     
+    // Normalize the symbol by removing all whitespace characters.
+    symbol = symbol.replaceAll("\\s+", "");
+    if (symbol.isEmpty()) {
+      return null;
+    }
+    
     Instant target = targetMinuteInstantUtc();
 
     // 1) in-memory
