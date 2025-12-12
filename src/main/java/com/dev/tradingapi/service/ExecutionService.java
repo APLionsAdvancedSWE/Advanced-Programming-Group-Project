@@ -82,28 +82,26 @@ public class ExecutionService {
 
     saveOrder(order);
 
-    // Handle zero quantity orders - they should be cancelled immediately
     if (order.getQty() == 0) {
       order.setStatus("CANCELLED");
       updateOrder(order);
       return order;
     }
 
+    if ("SELL".equalsIgnoreCase(order.getSide())) {
+      Position position = getPosition(order.getAccountId(), order.getSymbol());
+      int availableShares = (position != null) ? position.getQty() : 0;
+      
+      if (availableShares < order.getQty()) {
+        order.setStatus("CANCELLED");
+        updateOrder(order);
+        return order;
+      }
+    }
+
     List<Fill> fills = generateFills(order, mark);
     updatePositions(order, fills);
     updateOrderStatus(order, fills);
-
-    // MARKET orders: Cancel only if no fills occurred (no liquidity available)
-    // If partially filled, order remains PARTIALLY_FILLED (can complete later)
-    // This is a simulation-friendly approach that allows MARKET orders to rest
-    if ("MARKET".equalsIgnoreCase(order.getType())) {
-      if (order.getFilledQty() == order.getQty()) {
-        order.setStatus("FILLED");
-      } else {
-        order.setStatus("CANCELLED"); // cancel remainder
-      }
-      updateOrder(order);
-    }
 
     return order;
   }
@@ -130,54 +128,71 @@ public class ExecutionService {
     BigDecimal marketPrice = mark.getLast();
     Instant now = Instant.now();
   
-    // TWAP orders use synthetic liquidity (not matched against order book)
     if ("TWAP".equalsIgnoreCase(order.getType())) {
       return generateTwapFills(order, mark, now);
     }
   
-    // Determine matching price for LIMIT orders (MARKET handled separately in findMatchingOrders)
     BigDecimal matchingPrice = null;
     if ("LIMIT".equalsIgnoreCase(order.getType())) {
       if (order.getLimitPrice() == null) {
-        // Invalid LIMIT order without price
         return fills;
       }
       matchingPrice = order.getLimitPrice();
-    } else if (!"MARKET".equalsIgnoreCase(order.getType())) {
-      // Invalid order type
+    } else if ("MARKET".equalsIgnoreCase(order.getType())) {
+      if (order.getLimitPrice() != null) {
+        matchingPrice = order.getLimitPrice();
+      }
+    } else {
       return fills;
     }
   
-    // Find matching orders from the order book
     List<Order> matchingOrders = findMatchingOrders(order, matchingPrice);
-  
     int remainingQty = order.getQty();
   
-    // Match against each resting order in price-time priority
-    // This includes PARTIALLY_FILLED orders - they remain in the order book until fully filled
     for (Order restingOrder : matchingOrders) {
       if (remainingQty <= 0) {
         break;
       }
   
-      // Calculate how much of the resting order is still available
-      // For PARTIALLY_FILLED orders, this is the remaining unfilled quantity
-      int restingRemaining = restingOrder.getQty() - restingOrder.getFilledQty();
-      if (restingRemaining <= 0) {
-        continue; // This order is already fully filled
+      Order currentRestingOrder = getOrderById(restingOrder.getId());
+      if (currentRestingOrder == null) {
+        continue;
+      }
+      
+      if ("FILLED".equals(currentRestingOrder.getStatus()) 
+          || "CANCELLED".equals(currentRestingOrder.getStatus())) {
+        continue;
       }
   
-      // Determine fill quantity (min of what we need and what's available)
+      int restingRemaining = currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
+      if (restingRemaining <= 0) {
+        continue;
+      }
+  
       int fillQty = Math.min(remainingQty, restingRemaining);
   
-      // Execution price uses the resting order's limit price (standard exchange rule)
-      // For MARKET orders in the book (NULL limit_price), use market price
-      // This ensures MARKET orders match at any price, even if higher than expected
-      BigDecimal executionPrice = restingOrder.getLimitPrice() != null
-          ? restingOrder.getLimitPrice()
-          : marketPrice; // Fallback to market price if no limit
+      BigDecimal executionPrice;
+      if (currentRestingOrder.getLimitPrice() != null) {
+        executionPrice = currentRestingOrder.getLimitPrice();
+      } else {
+        System.err.println("WARNING: Resting order " + currentRestingOrder.getId() 
+            + " has null limitPrice but status is " + currentRestingOrder.getStatus()
+            + ". Using market price " + marketPrice + " as fallback.");
+        executionPrice = marketPrice;
+      }
   
-      // Create fill for the incoming order
+      if (matchingPrice != null) {
+        if ("BUY".equalsIgnoreCase(order.getSide())) {
+          if (executionPrice.compareTo(matchingPrice) > 0) {
+            continue;
+          }
+        } else {
+          if (executionPrice.compareTo(matchingPrice) < 0) {
+            continue;
+          }
+        }
+      }
+  
       Fill incomingFill = new Fill(
           UUID.randomUUID(),
           order.getId(),
@@ -188,66 +203,41 @@ public class ExecutionService {
       fills.add(incomingFill);
       fillRepository.save(incomingFill);
   
-      // Create fill for the resting order (both sides get fills)
       Fill restingFill = new Fill(
           UUID.randomUUID(),
-          restingOrder.getId(),
+          currentRestingOrder.getId(),
           fillQty,
           executionPrice,
           now
       );
       fillRepository.save(restingFill);
   
-      // Update the resting order's filled quantity and status
-      restingOrder.setFilledQty(restingOrder.getFilledQty() + fillQty);
-      updateRestingOrderStatus(restingOrder);
+      currentRestingOrder.setFilledQty(currentRestingOrder.getFilledQty() + fillQty);
+      updateRestingOrderStatus(currentRestingOrder);
   
-      // Update positions for the resting order's account
-      updatePositionsForFill(restingOrder, restingFill);
+      updatePositionsForFill(currentRestingOrder, restingFill);
   
       remainingQty -= fillQty;
     }
   
-    // Bootstrapping: If no matches found, check if this is the first BUY order
-    // 
-    // NOTE: This is a SIMULATED bootstrap to allow trading without historical orders.
-    // In real exchanges, the first order would become a resting limit order and wait
-    // for another order to cross it. This simulation allows demos to work immediately.
-    //
-    // Behavior:
-    // - First BUY order (empty order book): Execute at market price from API (price bootstrapping)
-    // - Subsequent orders (order book exists but no matches): Stay WORKING (wait for matches)
-    // - SELL orders NEVER bootstrap - they must wait for matching BUY orders
-    //
-    // This ensures:
-    // 1. First BUY order can execute immediately using market price (no SELL orders exist yet)
-    // 2. Subsequent BUY orders only execute if there are matching SELL orders
-    // 3. SELL orders always wait for matching BUY orders (no bootstrapping)
-    if (fills.isEmpty() && remainingQty > 0 && "BUY".equalsIgnoreCase(order.getSide())) {
-      boolean isOrderBookEmpty = isOrderBookEmpty(order.getSymbol(), order.getSide());
+    if (fills.isEmpty() 
+        && remainingQty > 0 
+        && "BUY".equalsIgnoreCase(order.getSide())
+        && "MARKET".equalsIgnoreCase(order.getType())
+        && order.getLimitPrice() == null
+        && isOrderBookEmpty(order.getSymbol(), order.getSide())) {
+      int fillQty = remainingQty;
+      BigDecimal executionPrice = marketPrice;
       
-      if (isOrderBookEmpty) {
-        // First BUY order: use market price to bootstrap (external reference price)
-        // For MARKET orders: always use market price
-        // For LIMIT orders: only if price is acceptable (already checked above)
-        if ("MARKET".equalsIgnoreCase(order.getType()) 
-            || ("LIMIT".equalsIgnoreCase(order.getType()) && matchingPrice != null)) {
-          int fillQty = remainingQty;
-          BigDecimal executionPrice = marketPrice; // Use market price from quote API
-          
-          Fill fill = new Fill(
-              UUID.randomUUID(),
-              order.getId(),
-              fillQty,
-              executionPrice,
-              now
-          );
-          fills.add(fill);
-          fillRepository.save(fill);
-        }
-      }
-      // If order book is not empty but no matches, order stays WORKING (no fills)
-      // This means subsequent orders must wait for matching orders to arrive
+      Fill fill = new Fill(
+          UUID.randomUUID(),
+          order.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
+      fills.add(fill);
+      fillRepository.save(fill);
     }
   
     return fills;
@@ -327,26 +317,22 @@ public class ExecutionService {
    * @return list of matching orders sorted by price-time priority
    */
   private List<Order> findMatchingOrders(Order incomingOrder, BigDecimal matchingPrice) {
-    boolean isMarketOrder = "MARKET".equalsIgnoreCase(incomingOrder.getType());
+    boolean isPriceProtected = (matchingPrice != null);
     
     if ("BUY".equalsIgnoreCase(incomingOrder.getSide())) {
-      if (isMarketOrder) {
-        // MARKET BUY: match any SELL order (no price filter)
-        // NOTE: MARKET orders should not be in the book (they execute immediately or cancel)
-        // This query only matches against LIMIT orders (limit_price IS NOT NULL)
+      if (!isPriceProtected) {
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'SELL' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price ASC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
         );
       } else {
-        // LIMIT BUY: match SELL orders where SELL price <= BUY price
-        // Only match against LIMIT orders (MARKET orders don't rest in book)
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
@@ -354,6 +340,7 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND limit_price <= ? "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price ASC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol(),
@@ -361,23 +348,19 @@ public class ExecutionService {
         );
       }
     } else {
-      if (isMarketOrder) {
-        // MARKET SELL: match any BUY order (no price filter)
-        // NOTE: MARKET orders should not be in the book (they execute immediately or cancel)
-        // This query only matches against LIMIT orders (limit_price IS NOT NULL)
+      if (!isPriceProtected) {
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'BUY' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price DESC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
         );
       } else {
-        // LIMIT SELL: match BUY orders where BUY price >= SELL price
-        // Only match against LIMIT orders (MARKET orders don't rest in book)
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
@@ -385,12 +368,29 @@ public class ExecutionService {
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
                 + "AND limit_price IS NOT NULL "
                 + "AND limit_price >= ? "
+                + "AND (qty - filled_qty) > 0 "
                 + "ORDER BY limit_price DESC, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol(),
             matchingPrice
         );
       }
+    }
+  }
+
+  /**
+   * Gets an order by its ID from the database.
+   * Used to re-read order state to prevent stale data issues during matching.
+   *
+   * @param orderId the order ID
+   * @return the order, or null if not found
+   */
+  private Order getOrderById(UUID orderId) {
+    String sql = "SELECT * FROM orders WHERE id = ?";
+    try {
+      return jdbcTemplate.queryForObject(sql, new OrderMapper(), orderId);
+    } catch (Exception e) {
+      return null;
     }
   }
 
@@ -429,7 +429,6 @@ public class ExecutionService {
       order.setStatus("FILLED");
     }
 
-    // Recalculate average fill price from all fills for this order
     List<Fill> orderFills = fillRepository.findByOrderId(order.getId());
     if (orderFills != null && !orderFills.isEmpty()) {
       BigDecimal totalCost = orderFills.stream()
@@ -549,6 +548,12 @@ public class ExecutionService {
 
     // Status determination: MARKET, LIMIT, and TWAP orders can all be
     // WORKING (no fills), PARTIALLY_FILLED (some fills), or FILLED (complete)
+    // 
+    // Examples:
+    // - BUY 100 matching SELL 50 → BUY gets 50 filled → status = PARTIALLY_FILLED
+    // - SELL 50 matching BUY 100 → SELL gets 50 filled → status = FILLED (complete)
+    // - BUY 100 with no matches → status = WORKING (waits for matching SELL orders)
+    //
     // Note: In this simulated system, MARKET orders can rest in the book if partially filled
     // This differs from real exchanges but is valid for simulation purposes
     if (totalFilled == 0) {
@@ -611,20 +616,6 @@ public class ExecutionService {
         order.getAvgFillPrice(), order.getId());
   }
 
-  /**
-   * Gets an order by ID.
-   *
-   * @param orderId order identifier
-   * @return order or null if not found
-   */
-  private Order getOrder(UUID orderId) {
-    String sql = "SELECT * FROM orders WHERE id = ?";
-    try {
-      return jdbcTemplate.queryForObject(sql, new OrderMapper(), orderId);
-    } catch (Exception e) {
-      return null;
-    }
-  }
 
   /**
    * Gets a position for an account and symbol.
