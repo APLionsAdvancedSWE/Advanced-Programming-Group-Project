@@ -247,14 +247,15 @@ json
 
 #### **`POST /accounts/create`**
 
-Creates a new trading account with username and password authentication.
+Creates a new trading account with a starting balance, username and password authentication.
 
 **Request Body:**
 ```json
 {
   "name": "John Doe",
   "username": "johndoe",
-  "password": "securepassword123"
+  "password": "securepassword123",
+  "initialBalance": 100000.00,
 }
 ```
 
@@ -262,7 +263,7 @@ Creates a new trading account with username and password authentication.
 ```bash
 curl -X POST http://localhost:8080/accounts/create \
   -H "Content-Type: application/json" \
-  -d '{"name":"John Doe","username":"johndoe","password":"securepassword123"}'
+  -d '{"name":"John Doe","username":"johndoe","password":"securepassword123","initialBalance": 100000.00}'
 ```
 
 **Response (201 Created):**

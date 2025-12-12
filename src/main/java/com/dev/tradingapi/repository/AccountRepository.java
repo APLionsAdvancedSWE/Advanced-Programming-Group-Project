@@ -90,7 +90,7 @@ public class AccountRepository {
    * @param maxPositionQty maximum allowed position quantity per symbol
    */
   public void updateRiskLimits(UUID accountId, int maxOrderQty,
-                               java.math.BigDecimal maxNotional,
+                               BigDecimal maxNotional,
                                int maxPositionQty) {
     String sql = "UPDATE accounts SET max_order_qty = ?, max_notional = ?, max_position_qty = ? "
         + "WHERE id = ?";
