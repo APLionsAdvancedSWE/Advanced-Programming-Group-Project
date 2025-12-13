@@ -65,13 +65,6 @@ public class ExecutionService {
 
     riskService.validate(req, mark);
 
-    // Validate order type and limitPrice combination
-    // MARKET orders should not have a limitPrice (they execute at best available price)
-    // LIMIT orders must have a limitPrice
-    if ("MARKET".equalsIgnoreCase(req.getType()) && req.getLimitPrice() != null) {
-      // MARKET orders ignore limitPrice - set to null
-      // This is more forgiving than rejecting the order
-    }
     if ("LIMIT".equalsIgnoreCase(req.getType()) && req.getLimitPrice() == null) {
       throw new IllegalArgumentException("LIMIT orders must specify a limitPrice");
     }
@@ -330,7 +323,7 @@ public class ExecutionService {
    * @return list of matching orders sorted by price-time priority
    */
   private List<Order> findMatchingOrders(Order incomingOrder, BigDecimal matchingPrice) {
-    boolean isPriceProtected = (matchingPrice != null);
+    boolean isPriceProtected = matchingPrice != null;
     
     if ("BUY".equalsIgnoreCase(incomingOrder.getSide())) {
       if (!isPriceProtected) {
