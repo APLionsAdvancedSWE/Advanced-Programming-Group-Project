@@ -94,24 +94,31 @@ public class ExecutionService {
     order.setAvgFillPrice(BigDecimal.ZERO);
     order.setCreatedAt(Instant.now());
 
-    saveOrder(order);
-
+    // Reject zero-quantity orders up front (persist as CANCELLED for auditability).
     if (order.getQty() == 0) {
       order.setStatus("CANCELLED");
-      updateOrder(order);
+      saveOrder(order);
       return order;
     }
 
+    // SELL-side holdings check: prevent over-selling beyond current position
+    // including any existing open SELL orders for this account+symbol.
     if ("SELL".equalsIgnoreCase(order.getSide())) {
       Position position = getPosition(order.getAccountId(), order.getSymbol());
-      int availableShares = (position != null) ? position.getQty() : 0;
-      
-      if (availableShares < order.getQty()) {
+      int positionQty = (position != null) ? position.getQty() : 0;
+
+      int openSellExposure = getOpenSellExposure(order.getAccountId(), order.getSymbol());
+      int availableToSell = positionQty - openSellExposure;
+
+      if (availableToSell < order.getQty()) {
         order.setStatus("CANCELLED");
-        updateOrder(order);
+        saveOrder(order);
         return order;
       }
     }
+
+    // Persist the live order in the book before matching.
+    saveOrder(order);
 
     List<Fill> fills = generateFills(order, mark);
     updatePositions(order, fills);
@@ -498,19 +505,18 @@ public class ExecutionService {
 
     order.setFilledQty(totalFilled);
 
-    // Status determination: MARKET, LIMIT, and TWAP orders can all be
-    // WORKING (no fills), PARTIALLY_FILLED (some fills), or FILLED (complete)
-    // 
-    // Examples:
-    // - BUY 100 matching SELL 50 → BUY gets 50 filled → status = PARTIALLY_FILLED
-    // - SELL 50 matching BUY 100 → SELL gets 50 filled → status = FILLED (complete)
-    // - BUY 100 with no matches → status = WORKING (waits for matching SELL orders)
-    //
-    // Note: In this simulated system, MARKET orders can rest in the book if partially filled
-    // This differs from real exchanges but is valid for simulation purposes
+    // Status determination:
+    // - LIMIT and TWAP orders can remain WORKING with no fills.
+    // - MARKET orders are IOC-style: if they receive no fills, they are CANCELLED
+    //   rather than resting in the book.
     if (totalFilled == 0) {
-      order.setStatus("WORKING");
-      order.setAvgFillPrice(null);
+      if ("MARKET".equalsIgnoreCase(order.getType())) {
+        order.setStatus("CANCELLED");
+        order.setAvgFillPrice(null);
+      } else {
+        order.setStatus("WORKING");
+        order.setAvgFillPrice(null);
+      }
     } else if (totalFilled < order.getQty()) {
       order.setStatus("PARTIALLY_FILLED");
       recalculateAverageFillPrice(order);
@@ -589,11 +595,34 @@ public class ExecutionService {
   }
 
   /**
+   * Computes the total remaining quantity of open SELL orders for an account and symbol.
+   * This is used to prevent over-selling beyond current position holdings.
+   */
+  private int getOpenSellExposure(UUID accountId, String symbol) {
+    String sql = "SELECT COALESCE(SUM(qty - filled_qty), 0) FROM orders "
+        + "WHERE account_id = ? AND symbol = ? "
+        + "AND side = 'SELL' "
+        + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED')";
+    Integer exposure = jdbcTemplate.queryForObject(sql, Integer.class, accountId, symbol);
+    return exposure != null ? exposure : 0;
+  }
+
+  /**
    * Saves a position to the database.
    *
    * @param position the position to save
    */
   private void savePosition(Position position) {
+    // If quantity is zero, remove the position row entirely to avoid
+    // "zombie" positions with 0 qty but a stale avg_cost.
+    if (position.getQty() == 0) {
+      jdbcTemplate.update(
+          "DELETE FROM positions WHERE account_id = ? AND symbol = ?",
+          position.getAccountId(),
+          position.getSymbol());
+      return;
+    }
+
     String sqlPg = "INSERT INTO positions (account_id, symbol, qty, avg_cost) VALUES (?, ?, ?, ?) "
         + "ON CONFLICT (account_id, symbol) DO UPDATE SET qty = EXCLUDED.qty,"
         + " avg_cost = EXCLUDED.avg_cost";

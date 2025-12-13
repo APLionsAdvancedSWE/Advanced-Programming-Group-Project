@@ -65,9 +65,9 @@ class OrderLifecycleIntegrationTest {
 
     assertNotNull(order);
     assertEquals("IBM", order.getSymbol());
-    // With a pure order-book engine and no opposing SELL orders,
-    // a first BUY MARKET order will rest WORKING with 0 fills.
-    assertEquals("WORKING", order.getStatus());
+    // Pure order book with IOC-style MARKET: first BUY MARKET
+    // with no opposing liquidity is immediately CANCELLED with 0 fills.
+    assertEquals("CANCELLED", order.getStatus());
     assertEquals(0, order.getFilledQty());
 
     // Verify order row persisted
@@ -167,13 +167,13 @@ class OrderLifecycleIntegrationTest {
         "IBM");
     assertEquals(100, buyerPosQty.intValue());
 
-    // Seller position should now be 0 IBM
-    Integer sellerPosQty = jdbcTemplate.queryForObject(
+    // Seller position should now be fully closed; the row may be deleted.
+    List<Integer> sellerPosQtys = jdbcTemplate.query(
         "SELECT qty FROM positions WHERE account_id = ? AND symbol = ?",
-        Integer.class,
+        (rs, rowNum) -> rs.getInt("qty"),
         sellerId,
         "IBM");
-    assertEquals(0, sellerPosQty.intValue());
+    assertTrue(sellerPosQtys.isEmpty() || sellerPosQtys.get(0) == 0);
   }
 
   @Test
