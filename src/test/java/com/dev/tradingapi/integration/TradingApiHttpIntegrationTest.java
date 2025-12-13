@@ -74,7 +74,9 @@ class TradingApiHttpIntegrationTest {
     assertNotNull(createOrderResp.getBody());
     Order createdOrder = createOrderResp.getBody();
     assertEquals("IBM", createdOrder.getSymbol());
-    assertEquals("FILLED", createdOrder.getStatus());
+    // With the book-based engine and no opposing orders, the
+    // first MARKET BUY will rest WORKING with zero fills.
+    assertEquals("WORKING", createdOrder.getStatus());
 
     // 3) Fetch the order back via GET /orders/{id}
     ResponseEntity<Order> getOrderResp = restTemplate.exchange(

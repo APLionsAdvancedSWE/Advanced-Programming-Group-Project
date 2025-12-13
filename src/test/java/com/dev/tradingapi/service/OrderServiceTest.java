@@ -55,6 +55,9 @@ class OrderServiceTest {
   @Mock
   private AccountService accountService;
 
+  @Mock
+  private ExecutionService executionService;
+
   private OrderService orderService;
 
   /**
@@ -63,8 +66,8 @@ class OrderServiceTest {
    */
   @BeforeEach
   void setUp() {
-    orderService = new OrderService(jdbcTemplate, marketService, riskService,
-        fillRepository, accountService);
+    orderService = new OrderService(jdbcTemplate, fillRepository,
+            accountService, executionService);
   }
 
   /**
@@ -84,23 +87,25 @@ class OrderServiceTest {
     req.setType("MARKET");
     req.setTimeInForce("DAY");
 
-    // Mock market data returning a quote with price $150.00
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 1000000L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
+    // The execution engine is responsible for creating the order and fills.
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(100);
+    engineOrder.setType("MARKET");
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(100);
+    engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    // Mock risk validation to pass
-    doNothing().when(riskService).validate(any(CreateOrderRequest.class), any(Quote.class));
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
 
-    // Mock JDBC operations for order and position persistence
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null); // No existing position
+    Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
+        new BigDecimal("150.00"), Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
-    // Mock FillRepository
-    doNothing().when(fillRepository).save(any(Fill.class));
-
-    // Act: Submit the order
+    // Act: Submit the order via OrderService
     Order result = orderService.submit(req);
 
     // Assert: Verify the order was created with correct properties
@@ -113,12 +118,12 @@ class OrderServiceTest {
     assertEquals(100, result.getFilledQty());
     assertEquals(new BigDecimal("150.00"), result.getAvgFillPrice());
 
-    // Verify interactions: market data, risk check, and persistence
-    verify(marketService, times(1)).getQuote("AAPL");
-    verify(riskService, times(1)).validate(req, quote);
-    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total (fill save is now in FillRepository)
-    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
-    verify(fillRepository, times(1)).save(any(Fill.class));
+    // Verify interactions: delegated to execution engine and cash adjusted
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    // BUY 100 @ 150 => cash delta = -15000.00
+    verify(accountService, times(1))
+        .adjustCash(eq(req.getAccountId()), eq(new BigDecimal("-15000.00")));
   }
 
   /**
@@ -138,21 +143,26 @@ class OrderServiceTest {
     req.setType("TWAP");
     req.setTimeInForce("DAY");
 
-    // Mock market data
-    Quote quote = new Quote("AMZN", new BigDecimal("3190.00"), new BigDecimal("3210.00"),
-        new BigDecimal("3180.00"), new BigDecimal("3200.50"), 500000L, Instant.now());
-    when(marketService.getQuote("AMZN")).thenReturn(quote);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AMZN");
+    engineOrder.setSide("SELL");
+    engineOrder.setQty(105);
+    engineOrder.setType("TWAP");
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(105);
+    engineOrder.setAvgFillPrice(new BigDecimal("3200.50"));
 
-    // Mock risk validation to pass
-    doNothing().when(riskService).validate(any(CreateOrderRequest.class), any(Quote.class));
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
 
-    // Mock JDBC operations
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AMZN"))).thenReturn(null);
-
-    // Mock FillRepository
-    doNothing().when(fillRepository).save(any(Fill.class));
+    // Simulate 3 TWAP fills whose total notional equals 105 * 3200.50
+    BigDecimal price = new BigDecimal("3200.50");
+    Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
+    Fill f2 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
+    Fill f3 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId()))
+        .thenReturn(Arrays.asList(f1, f2, f3));
 
     // Act: Submit the TWAP order
     Order result = orderService.submit(req);
@@ -166,14 +176,12 @@ class OrderServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(105, result.getFilledQty()); // All shares filled across slices
 
-    // Verify multiple fill inserts (one for order, multiple for fills, one for
-    // position)
-    // For TWAP with 105 shares: 10 slices (10 base + 5 remainder =
-    // 11,11,11,11,11,10,10,10,10,10)
-    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total
-    // (10 fill saves are now in FillRepository)
-    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
-    verify(fillRepository, times(10)).save(any(Fill.class));
+    // Verify delegation and cash adjustment for SELL side (cash credited)
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    BigDecimal expectedNotional = price.multiply(new BigDecimal("105"));
+    verify(accountService, times(1))
+        .adjustCash(eq(req.getAccountId()), eq(expectedNotional));
   }
 
   /**
@@ -190,9 +198,10 @@ class OrderServiceTest {
     req.setQty(10);
     req.setType("MARKET");
 
-    // Mock market service returning null (symbol not found)
-    // Mock market data returning null to simulate unavailable symbol
-    when(marketService.getQuote("INVALID")).thenReturn(null);
+    // ExecutionService is responsible for throwing NotFoundException when
+    // market data is unavailable. OrderService should simply propagate it.
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenThrow(new NotFoundException("Market data not available for symbol: INVALID"));
 
     // Act & Assert: Verify exception is thrown with appropriate message
     NotFoundException exception = assertThrows(NotFoundException.class, () -> {
@@ -202,8 +211,8 @@ class OrderServiceTest {
     assertTrue(exception.getMessage().contains("Market data not available"));
     assertTrue(exception.getMessage().contains("INVALID"));
 
-    // Verify risk validation was never called since market data check failed first
-    verify(riskService, times(0)).validate(any(), any());
+    // Verify we delegated to the execution engine
+    verify(executionService, times(1)).createOrder(req);
   }
 
   /**
@@ -222,20 +231,22 @@ class OrderServiceTest {
     req.setQty(50);
     req.setType("MARKET");
 
-    // Mock market data
-    Quote quote = new Quote("IBM", new BigDecimal("138.00"), new BigDecimal("142.00"),
-        new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
-    when(marketService.getQuote("IBM")).thenReturn(quote);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(accountId);
+    engineOrder.setSymbol("IBM");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(50);
+    engineOrder.setType("MARKET");
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(50);
+    engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    doNothing().when(riskService).validate(any(), any());
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
 
-    // Mock existing position: account holds 100 shares at avg cost $135
-    Position existingPos = new Position(accountId, "IBM", 100, new BigDecimal("135.00"));
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(accountId), eq("IBM")))
-        .thenReturn(existingPos);
-
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(Fill.class));
+    Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 50,
+        new BigDecimal("140.00"), Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
     // Act: Submit order
     Order result = orderService.submit(req);
@@ -245,11 +256,11 @@ class OrderServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(50, result.getFilledQty());
 
-    // Verify position update was called (existing position should be updated with
-    // new fill)
-    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total (fill save is now in FillRepository)
-    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
-    verify(fillRepository, times(1)).save(any(Fill.class));
+    // Verify we delegated to execution engine and adjusted cash
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    verify(accountService, times(1))
+        .adjustCash(eq(accountId), eq(new BigDecimal("-7000.00")));
   }
 
   /**
@@ -499,15 +510,25 @@ class OrderServiceTest {
     req.setQty(3); // Small quantity
     req.setType("TWAP");
 
-    Quote quote = new Quote("IBM", new BigDecimal("138.00"), new BigDecimal("142.00"),
-        new BigDecimal("137.00"), new BigDecimal("140.00"), 300000L, Instant.now());
-    when(marketService.getQuote("IBM")).thenReturn(quote);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("IBM");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(3);
+    engineOrder.setType("TWAP");
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(3);
+    engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), eq("IBM")))
-        .thenReturn(null);
-    doNothing().when(fillRepository).save(any(Fill.class));
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+
+    // Simulate 2 TWAP fills for a small order
+    BigDecimal price = new BigDecimal("140.00");
+    Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 1, price, Instant.now());
+    Fill f2 = new Fill(UUID.randomUUID(), engineOrder.getId(), 2, price, Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId()))
+        .thenReturn(Arrays.asList(f1, f2));
 
     // Act: Submit small TWAP order
     Order result = orderService.submit(req);
@@ -517,11 +538,12 @@ class OrderServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(3, result.getFilledQty());
 
-    // Verify multiple fills were created (at least 2 for TWAP)
-    // 1 saveOrder + 1 savePosition + 1 updateOrder = 3 total
-    // (3 fill saves are now in FillRepository)
-    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
-    verify(fillRepository, times(3)).save(any(Fill.class));
+    // Verify we delegated and adjusted cash
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    BigDecimal expectedNotional = price.multiply(new BigDecimal("3"));
+    verify(accountService, times(1))
+        .adjustCash(eq(req.getAccountId()), eq(expectedNotional.negate()));
   }
 
   /**
@@ -539,14 +561,23 @@ class OrderServiceTest {
     req.setQty(10);
     req.setType("MARKET");
 
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 100000L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null);
-    doNothing().when(fillRepository).save(any(Fill.class));
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(accountId);
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(10);
+    engineOrder.setType("MARKET");
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(10);
+    engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+
+    Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 10,
+        new BigDecimal("150.00"), Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId()))
+        .thenReturn(Arrays.asList(f1));
 
     // Act: Write - submit order
     Order created = orderService.submit(req);
@@ -564,10 +595,7 @@ class OrderServiceTest {
     when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), eq(orderId)))
         .thenReturn(stored);
 
-    Fill f1 = new Fill(UUID.randomUUID(), orderId, 10, new BigDecimal("150.00"),
-        Instant.now());
-    when(fillRepository.findByOrderId(orderId))
-        .thenReturn(Arrays.asList(f1));
+    // fillRepository.findByOrderId(orderId) already stubbed above
 
     // Act: Read - get order and fills
     Order fetched = orderService.getOrder(orderId);
@@ -581,7 +609,8 @@ class OrderServiceTest {
     assertEquals(1, fetchedFills.size());
     assertEquals(10, fetchedFills.get(0).getQty());
 
-    // Verify write and read occurred (allowing for multiple lookups internally)
+    // Verify write (delegation) and read occurred
+    verify(executionService, times(1)).createOrder(req);
     verify(jdbcTemplate, org.mockito.Mockito.atLeastOnce())
         .queryForObject(anyString(), any(RowMapper.class), eq(orderId));
     verify(fillRepository, org.mockito.Mockito.atLeastOnce())
@@ -613,42 +642,47 @@ class OrderServiceTest {
     b.setQty(7);
     b.setType("MARKET");
 
-    when(marketService.getQuote("AAPL")).thenReturn(new Quote("AAPL",
-        new BigDecimal("149"), new BigDecimal("151"), new BigDecimal("148"),
-        new BigDecimal("150"), 1000L, Instant.now()));
-    when(marketService.getQuote("MSFT")).thenReturn(new Quote("MSFT",
-        new BigDecimal("299"), new BigDecimal("301"), new BigDecimal("298"),
-        new BigDecimal("300"), 1000L, Instant.now()));
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class), any()))
-        .thenReturn(null);
+    Order engineOrderA = new Order();
+    engineOrderA.setId(UUID.randomUUID());
+    engineOrderA.setAccountId(acctA);
+    engineOrderA.setSymbol("AAPL");
+    engineOrderA.setSide("BUY");
+    engineOrderA.setQty(5);
+    engineOrderA.setType("MARKET");
+    engineOrderA.setStatus("FILLED");
+    engineOrderA.setFilledQty(5);
+    engineOrderA.setAvgFillPrice(new BigDecimal("150"));
+
+    Order engineOrderB = new Order();
+    engineOrderB.setId(UUID.randomUUID());
+    engineOrderB.setAccountId(acctB);
+    engineOrderB.setSymbol("MSFT");
+    engineOrderB.setSide("SELL");
+    engineOrderB.setQty(7);
+    engineOrderB.setType("MARKET");
+    engineOrderB.setStatus("FILLED");
+    engineOrderB.setFilledQty(7);
+    engineOrderB.setAvgFillPrice(new BigDecimal("300"));
+
+    when(executionService.createOrder(a)).thenReturn(engineOrderA);
+    when(executionService.createOrder(b)).thenReturn(engineOrderB);
+
+    when(fillRepository.findByOrderId(engineOrderA.getId()))
+        .thenReturn(List.of(new Fill(UUID.randomUUID(), engineOrderA.getId(), 5,
+            new BigDecimal("150"), Instant.now())));
+    when(fillRepository.findByOrderId(engineOrderB.getId()))
+        .thenReturn(List.of(new Fill(UUID.randomUUID(), engineOrderB.getId(), 7,
+            new BigDecimal("300"), Instant.now())));
 
     // Act: submit orders for two clients
     orderService.submit(a);
     orderService.submit(b);
 
-    // Capture all update parameter arrays to verify both accountIds appeared
-    org.mockito.ArgumentCaptor<Object[]> paramsCaptor = org.mockito.ArgumentCaptor.forClass(
-        Object[].class);
-    verify(jdbcTemplate, org.mockito.Mockito.atLeast(1))
-        .update(anyString(), paramsCaptor.capture());
-
-    boolean seenA = false;
-    boolean seenB = false;
-    for (Object[] arr : paramsCaptor.getAllValues()) {
-      for (Object v : arr) {
-        if (acctA.equals(v)) {
-          seenA = true;
-        }
-        if (acctB.equals(v)) {
-          seenB = true;
-        }
-      }
-    }
-
-    assertTrue(seenA, "Updates should contain account A id");
-    assertTrue(seenB, "Updates should contain account B id");
+    // Verify each account's cash was adjusted independently
+    verify(accountService, times(1))
+        .adjustCash(eq(acctA), eq(new BigDecimal("-750")));
+    verify(accountService, times(1))
+        .adjustCash(eq(acctB), eq(new BigDecimal("2100")));
   }
 
   /**
@@ -666,13 +700,20 @@ class OrderServiceTest {
     req.setLimitPrice(new BigDecimal("145.00")); // Limit $145, market $150
     req.setTimeInForce("GTC");
 
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 100000L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(100);
+    engineOrder.setType("LIMIT");
+    engineOrder.setLimitPrice(new BigDecimal("145.00"));
+    engineOrder.setStatus("WORKING");
+    engineOrder.setFilledQty(0);
+    engineOrder.setAvgFillPrice(null);
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
     Order result = orderService.submit(req);
 
@@ -681,9 +722,8 @@ class OrderServiceTest {
     assertEquals(new BigDecimal("145.00"), result.getLimitPrice());
     assertEquals("WORKING", result.getStatus()); // No fill
     assertEquals(0, result.getFilledQty());
-    verify(marketService, times(1)).getQuote("AAPL");
-    // Should save order 3 times: initial insert + savePosition (even with no fills) + status update
-    verify(jdbcTemplate, times(3)).update(anyString(), any(Object[].class));
+    // No fills => no cash adjustment
+    verify(accountService, times(0)).adjustCash(any(), any());
   }
 
   /**
@@ -701,26 +741,38 @@ class OrderServiceTest {
     req.setLimitPrice(new BigDecimal("155.00")); // Limit $155, market $150
     req.setTimeInForce("GTC");
 
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 1000000L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(100);
+    engineOrder.setType("LIMIT");
+    engineOrder.setLimitPrice(new BigDecimal("155.00"));
+    engineOrder.setStatus("FILLED");
+    engineOrder.setFilledQty(100);
+    engineOrder.setAvgFillPrice(new BigDecimal("155.00"));
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+
+    Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
+        new BigDecimal("155.00"), Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
     Order result = orderService.submit(req);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
     assertEquals(new BigDecimal("155.00"), result.getLimitPrice());
-    // Should fill (limit price >= market price)
-    assertTrue("FILLED".equals(result.getStatus())
-            || "PARTIALLY_FILLED".equals(result.getStatus()));
-    assertTrue(result.getFilledQty() > 0);
+    // Should fill
+    assertEquals("FILLED", result.getStatus());
+    assertEquals(100, result.getFilledQty());
     // Fill price should be limit price (better for trader)
     assertEquals(new BigDecimal("155.00"), result.getAvgFillPrice());
-    verify(marketService, times(1)).getQuote("AAPL");
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    verify(accountService, times(1))
+        .adjustCash(eq(req.getAccountId()), eq(new BigDecimal("-15500.00")));
   }
 
   /**
@@ -738,13 +790,20 @@ class OrderServiceTest {
     req.setLimitPrice(new BigDecimal("160.00")); // Limit $160, market $150
     req.setTimeInForce("GTC");
 
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 100000L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("SELL");
+    engineOrder.setQty(100);
+    engineOrder.setType("LIMIT");
+    engineOrder.setLimitPrice(new BigDecimal("160.00"));
+    engineOrder.setStatus("WORKING");
+    engineOrder.setFilledQty(0);
+    engineOrder.setAvgFillPrice(null);
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
     Order result = orderService.submit(req);
 
@@ -754,7 +813,8 @@ class OrderServiceTest {
     assertEquals(new BigDecimal("160.00"), result.getLimitPrice());
     assertEquals("WORKING", result.getStatus()); // No fill
     assertEquals(0, result.getFilledQty());
-    verify(marketService, times(1)).getQuote("AAPL");
+    // No fills => no cash adjustment
+    verify(accountService, times(0)).adjustCash(any(), any());
   }
 
   /**
@@ -771,14 +831,23 @@ class OrderServiceTest {
     req.setType("MARKET");
     req.setTimeInForce("DAY");
 
-    // Low volume (100) means ~50 shares available (min liquidity)
-    Quote quote = new Quote("AAPL", new BigDecimal("149.00"), new BigDecimal("151.00"),
-        new BigDecimal("148.00"), new BigDecimal("150.00"), 100L, Instant.now());
-    when(marketService.getQuote("AAPL")).thenReturn(quote);
-    doNothing().when(riskService).validate(any(), any());
-    when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    when(jdbcTemplate.queryForObject(anyString(), any(RowMapper.class), any(UUID.class),
-        eq("AAPL"))).thenReturn(null);
+    Order engineOrder = new Order();
+    engineOrder.setId(UUID.randomUUID());
+    engineOrder.setAccountId(req.getAccountId());
+    engineOrder.setSymbol("AAPL");
+    engineOrder.setSide("BUY");
+    engineOrder.setQty(1000);
+    engineOrder.setType("MARKET");
+    engineOrder.setStatus("PARTIALLY_FILLED");
+    engineOrder.setFilledQty(200);
+    engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+
+    Fill partialFill = new Fill(UUID.randomUUID(), engineOrder.getId(), 200,
+        new BigDecimal("150.00"), Instant.now());
+    when(fillRepository.findByOrderId(engineOrder.getId()))
+        .thenReturn(List.of(partialFill));
 
     Order result = orderService.submit(req);
 
@@ -786,9 +855,10 @@ class OrderServiceTest {
     assertEquals("MARKET", result.getType());
     assertEquals(1000, result.getQty()); // Requested 1000
     assertEquals("PARTIALLY_FILLED", result.getStatus()); // Should be partial
-    assertTrue(result.getFilledQty() > 0); // Some fills
-    assertTrue(result.getFilledQty() < result.getQty()); // But not all
-    assertTrue(result.getFilledQty() <= 10000); // Capped by max liquidity
-    verify(marketService, times(1)).getQuote("AAPL");
+    assertEquals(200, result.getFilledQty());
+    verify(executionService, times(1)).createOrder(req);
+    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    verify(accountService, times(1))
+        .adjustCash(eq(req.getAccountId()), eq(new BigDecimal("-30000.00")));
   }
 }
