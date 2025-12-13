@@ -144,14 +144,14 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-        Order result = executionService.createOrder(request);
+    Order result = executionService.createOrder(request);
 
-        assertNotNull(result);
-        assertEquals(10000, result.getQty());
-        // With no opposing volume in our book, MARKET BUY rests WORKING with no fills
-        assertEquals(0, result.getFilledQty());
-        assertEquals("WORKING", result.getStatus());
-        verify(marketService, times(1)).getQuote("AAPL");
+    assertNotNull(result);
+    assertEquals(10000, result.getQty());
+    // With no opposing volume in our book, MARKET BUY rests WORKING with no fills
+    assertEquals(0, result.getFilledQty());
+    assertEquals("WORKING", result.getStatus());
+    verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
@@ -224,14 +224,14 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-        Order result = executionService.createOrder(request);
+    Order result = executionService.createOrder(request);
 
-        assertNotNull(result);
-        assertEquals("IOC", result.getTimeInForce());
-        // With no opposing volume, IOC MARKET behaves like a resting WORKING order in this simulation
-        assertEquals("WORKING", result.getStatus());
-        assertEquals(0, result.getFilledQty());
-        verify(marketService, times(1)).getQuote("AAPL");
+    assertNotNull(result);
+    assertEquals("IOC", result.getTimeInForce());
+    // With no opposing volume, IOC MARKET behaves like a resting WORKING order in this simulation
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
+    verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
@@ -551,14 +551,14 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-        Order result = executionService.createOrder(request);
+    Order result = executionService.createOrder(request);
 
-        assertNotNull(result);
-        assertEquals("FOK", result.getTimeInForce());
-        // In this simplified engine, FOK behaves like MARKET with no book liquidity
-        assertEquals("WORKING", result.getStatus());
-        assertEquals(0, result.getFilledQty());
-        verify(marketService, times(1)).getQuote("AAPL");
+    assertNotNull(result);
+    assertEquals("FOK", result.getTimeInForce());
+    // In this simplified engine, FOK behaves like MARKET with no book liquidity
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
+    verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
@@ -683,15 +683,15 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-        Order result = executionService.createOrder(request);
+    Order result = executionService.createOrder(request);
 
-        assertNotNull(result);
-        assertEquals("MARKET", result.getType());
-        assertEquals(1000, result.getQty()); // Requested 1000
-        // With no book liquidity at all, the order remains WORKING with no fills
-        assertEquals("WORKING", result.getStatus());
-        assertEquals(0, result.getFilledQty());
-        verify(marketService, times(1)).getQuote("AAPL");
+    assertNotNull(result);
+    assertEquals("MARKET", result.getType());
+    assertEquals(1000, result.getQty()); // Requested 1000
+    // With no book liquidity at all, the order remains WORKING with no fills
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
+    verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
@@ -1009,17 +1009,17 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-        Order result = executionService.createOrder(request);
+    Order result = executionService.createOrder(request);
 
-        assertNotNull(result);
-        assertEquals("MARKET", result.getType());
-        assertEquals("BUY", result.getSide());
-        // MARKET order with no fills stays WORKING (not CANCELLED) - they can rest in the book
-        assertEquals("WORKING", result.getStatus());
-        assertEquals(0, result.getFilledQty());
-        assertEquals(null, result.getAvgFillPrice());
-        verify(marketService, times(1)).getQuote("AAPL");
-        verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
+    assertNotNull(result);
+    assertEquals("MARKET", result.getType());
+    assertEquals("BUY", result.getSide());
+    // MARKET order with no fills stays WORKING (not CANCELLED) - they can rest in the book
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
+    assertEquals(null, result.getAvgFillPrice());
+    verify(marketService, times(1)).getQuote("AAPL");
+    verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
   }
 
   /**
