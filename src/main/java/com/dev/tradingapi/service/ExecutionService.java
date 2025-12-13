@@ -234,26 +234,6 @@ public class ExecutionService {
       remainingQty -= fillQty;
     }
   
-    if (fills.isEmpty() 
-        && remainingQty > 0 
-        && "BUY".equalsIgnoreCase(order.getSide())
-        && "MARKET".equalsIgnoreCase(order.getType())
-        && order.getLimitPrice() == null
-        && isCompletelyEmptyBook(order.getSymbol())) {
-      int fillQty = remainingQty;
-      BigDecimal executionPrice = marketPrice;
-      
-      Fill fill = new Fill(
-          UUID.randomUUID(),
-          order.getId(),
-          fillQty,
-          executionPrice,
-          now
-      );
-      fills.add(fill);
-      fillRepository.save(fill);
-    }
-  
     return fills;
   }
 
@@ -279,12 +259,10 @@ public class ExecutionService {
     for (int i = 0; i < slices && remainingQty > 0; i++) {
       int sliceQty = baseSliceQty + (i < remainder ? 1 : 0);
       sliceQty = Math.min(sliceQty, remainingQty);
-  
-      int availableLiquidity = calculateAvailableLiquidity(mark);
-      int fillQty = Math.min(sliceQty, availableLiquidity);
-  
+
+      int fillQty = sliceQty;
       if (fillQty <= 0) {
-        break;
+        continue;
       }
   
       Fill fill = new Fill(
@@ -299,10 +277,6 @@ public class ExecutionService {
       fillRepository.save(fill);
   
       remainingQty -= fillQty;
-  
-      if (fillQty < sliceQty) {
-        break;
-      }
     }
   
     return fills;
@@ -331,7 +305,7 @@ public class ExecutionService {
    * @return list of matching orders sorted by price-time priority
    */
   private List<Order> findMatchingOrders(Order incomingOrder, BigDecimal matchingPrice) {
-    boolean isPriceProtected = (matchingPrice != null);
+    boolean isPriceProtected = matchingPrice != null;
     
     if ("BUY".equalsIgnoreCase(incomingOrder.getSide())) {
       if (!isPriceProtected) {
@@ -413,23 +387,6 @@ public class ExecutionService {
   }
 
   /**
-   * Checks if the order book is completely empty for a given symbol.
-   * Used to determine if this is the very first order (bootstrapping scenario).
-   * Once any order exists, bootstrapping is permanently disabled.
-   *
-   * @param symbol the trading symbol
-   * @return true if no orders exist for this symbol, false otherwise
-   */
-  private boolean isCompletelyEmptyBook(String symbol) {
-    Integer count = jdbcTemplate.queryForObject(
-        "SELECT COUNT(*) FROM orders WHERE symbol = ?",
-        Integer.class,
-        symbol
-    );
-    return count == null || count == 0;
-  }
-
-  /**
    * Updates a resting order's status after it has been matched.
    * Updates the order's filled quantity, average fill price, and status in the database.
    *
@@ -466,25 +423,6 @@ public class ExecutionService {
     );
   }
   
-  /**
-   * Calculates available liquidity at the current price.
-   * 
-   * <p>Simulates market depth by using 10% of the quote volume or a minimum of 50 shares,
-   * whichever is larger. The result is capped at 10,000 shares to prevent unrealistic
-   * fill quantities. This ensures orders may receive partial fills or no fills when
-   * market liquidity is limited.
-   *
-   * @param mark current market quote
-   * @return available quantity at the price (between 50 and 10,000 shares)
-   */
-  private int calculateAvailableLiquidity(Quote mark) {
-    long volume = mark.getVolume();
-    int availableFromVolume = (int) (volume * 0.1);
-    int minLiquidity = 50;
-    
-    return Math.max(minLiquidity, Math.min(availableFromVolume, 10000));
-  }
-
   /**
    * Updates positions for an account based on fills.
    *
@@ -656,13 +594,18 @@ public class ExecutionService {
    * @param position the position to save
    */
   private void savePosition(Position position) {
-    String sql = "INSERT INTO positions (account_id, symbol, qty, avg_cost) "
-        + "VALUES (?, ?, ?, ?) ON CONFLICT (account_id, symbol) "
-        + "DO UPDATE SET qty = ?, avg_cost = ?";
-
-    jdbcTemplate.update(sql, position.getAccountId(), position.getSymbol(),
-        position.getQty(), position.getAvgCost(), position.getQty(),
-        position.getAvgCost());
+    String sqlPg = "INSERT INTO positions (account_id, symbol, qty, avg_cost) VALUES (?, ?, ?, ?) "
+        + "ON CONFLICT (account_id, symbol) DO UPDATE SET qty = EXCLUDED.qty,"
+        + " avg_cost = EXCLUDED.avg_cost";
+    try {
+      jdbcTemplate.update(sqlPg, position.getAccountId(), position.getSymbol(),
+          position.getQty(), position.getAvgCost());
+    } catch (Exception e) {
+      // Fallback for H2 or databases without ON CONFLICT support
+      String sqlMerge = "MERGE INTO positions KEY(account_id, symbol) VALUES (?, ?, ?, ?)";
+      jdbcTemplate.update(sqlMerge, position.getAccountId(), position.getSymbol(),
+          position.getQty(), position.getAvgCost());
+    }
   }
 
   /**

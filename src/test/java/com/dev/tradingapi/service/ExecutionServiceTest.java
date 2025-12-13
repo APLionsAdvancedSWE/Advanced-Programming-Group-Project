@@ -139,27 +139,18 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(0);
-    
-    // Mock query to return empty list (no matching orders)
+    // Mock query to return empty list (no matching orders in book)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock fillRepository.findByOrderId to return the fill created during bootstrapping
-    Fill bootstrapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 10000, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(bootstrapFill));
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals(10000, result.getQty());
-    assertEquals(10000, result.getFilledQty());
-    assertEquals("FILLED", result.getStatus()); // First order executes at market price
+    // With no opposing volume in our book, MARKET BUY rests WORKING with no fills
+    assertEquals(0, result.getFilledQty());
+    assertEquals("WORKING", result.getStatus());
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -228,26 +219,18 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(0);
-    
-    // Mock query to return empty list (no matching orders)
+    // Mock query to return empty list (no matching orders in book)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock fillRepository.findByOrderId to return the fill created during bootstrapping
-    Fill bootstrapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 100, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(bootstrapFill));
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals("IOC", result.getTimeInForce());
-    assertEquals("FILLED", result.getStatus()); // First order executes at market price
+    // With no opposing volume, IOC MARKET behaves like a resting WORKING order in this simulation
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -563,26 +546,18 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(0);
-    
-    // Mock query to return empty list (no matching orders)
+    // Mock query to return empty list (no matching orders in book)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock fillRepository.findByOrderId to return the fill created during bootstrapping
-    Fill bootstrapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 100, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(bootstrapFill));
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals("FOK", result.getTimeInForce());
-    assertEquals("FILLED", result.getStatus()); // First order executes at market price
+    // In this simplified engine, FOK behaves like MARKET with no book liquidity
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -659,7 +634,8 @@ class ExecutionServiceTest {
     
     // Mock position check - account has enough shares to sell (100 shares)
     Position position = new Position(accountId, "AAPL", 100, new BigDecimal("150.00"));
-    when(jdbcTemplate.queryForObject(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+    when(jdbcTemplate.queryForObject(anyString(),
+        any(org.springframework.jdbc.core.RowMapper.class),
         any(UUID.class), any(String.class))).thenReturn(position);
     
     // Mock query to return empty list (no matching BUY orders)
@@ -702,29 +678,19 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(0);
-    
-    // Mock query to return empty list (no matching orders)
+    // Mock query to return empty list (no matching orders in book)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock fillRepository.findByOrderId to return the fill created during bootstrapping
-    Fill bootstrapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 1000, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(bootstrapFill));
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
     assertEquals(1000, result.getQty()); // Requested 1000
-    // First order executes at market price, so it should be FILLED (not PARTIALLY_FILLED)
-    assertEquals("FILLED", result.getStatus());
-    assertEquals(1000, result.getFilledQty()); // Fully filled at market price
+    // With no book liquidity at all, the order remains WORKING with no fills
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -996,31 +962,21 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
-    doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock query to return empty list (no matching SELL orders)
+    // Mock query to return empty list (no matching SELL orders in book)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(0);
-    
-    // Mock fillRepository.findByOrderId to return the fill created during bootstrapping
-    Fill bootstrapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 100, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(bootstrapFill));
 
     Order result = executionService.createOrder(request);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
     assertEquals("BUY", result.getSide());
-    assertEquals("FILLED", result.getStatus()); // First order executes at market price
-    assertEquals(100, result.getFilledQty());
-    assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice()); // Market price
+    // With an empty book and no synthetic liquidity, first MARKET BUY rests WORKING
+    assertEquals("WORKING", result.getStatus());
+    assertEquals(0, result.getFilledQty());
+    assertEquals(null, result.getAvgFillPrice());
     verify(marketService, times(1)).getQuote("AAPL");
-    verify(fillRepository, times(1)).save(any(com.dev.tradingapi.model.Fill.class));
   }
 
   /**
@@ -1049,10 +1005,6 @@ class ExecutionServiceTest {
     // Mock query to return empty list (no matching SELL orders)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
-    
-    // Mock isOrderBookEmpty check - return > 0 (order book exists, not first order)
-    when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(1); // At least one SELL order exists in system
     
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());

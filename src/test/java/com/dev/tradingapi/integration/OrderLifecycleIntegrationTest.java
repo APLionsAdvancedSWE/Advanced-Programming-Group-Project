@@ -2,6 +2,7 @@ package com.dev.tradingapi.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.dev.tradingapi.dto.CreateOrderRequest;
 import com.dev.tradingapi.model.Fill;
@@ -64,8 +65,10 @@ class OrderLifecycleIntegrationTest {
 
     assertNotNull(order);
     assertEquals("IBM", order.getSymbol());
-    assertEquals("FILLED", order.getStatus());
-    assertEquals(50, order.getFilledQty());
+    // With a pure order-book engine and no opposing SELL orders,
+    // a first BUY MARKET order will rest WORKING with 0 fills.
+    assertEquals("WORKING", order.getStatus());
+    assertEquals(0, order.getFilledQty());
 
     // Verify order row persisted
     Order storedOrder = jdbcTemplate.queryForObject(
@@ -74,22 +77,147 @@ class OrderLifecycleIntegrationTest {
         order.getId());
     assertNotNull(storedOrder);
 
-    // Verify fills persisted
+    // Verify no fills yet (no opposing liquidity in the book)
     List<Fill> fills = jdbcTemplate.query(
         "SELECT * FROM fills WHERE order_id = ?",
         new BeanPropertyRowMapper<>(Fill.class),
         order.getId());
     assertNotNull(fills);
     int totalFillQty = fills.stream().mapToInt(Fill::getQty).sum();
-    assertEquals(50, totalFillQty);
+    assertEquals(0, totalFillQty);
 
-    // Verify position updated (check qty directly to avoid model mapping issues)
-    Integer positionQty = jdbcTemplate.queryForObject(
+    // Verify position has not changed yet: either no row or zero qty.
+    List<Integer> positionQtys = jdbcTemplate.query(
+        "SELECT qty FROM positions WHERE account_id = ? AND symbol = ?",
+        (rs, rowNum) -> rs.getInt("qty"),
+        accountId,
+        "IBM");
+    assertTrue(positionQtys.isEmpty() || positionQtys.get(0) == 0);
+  }
+
+  @Test
+  void limitBuy_matchesRestingSell_createsFillsAndPosition() {
+    UUID buyerId = UUID.randomUUID();
+    UUID sellerId = UUID.randomUUID();
+
+    jdbcTemplate.update(
+        "INSERT INTO accounts (id, name, auth_token, username, password_hash, max_order_qty, "
+            + "max_notional, max_position_qty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        buyerId, "Buyer", "buyer-key", "buyer", "hash", 10000, 1_000_000, 100_000);
+
+    jdbcTemplate.update(
+        "INSERT INTO accounts (id, name, auth_token, username, password_hash, max_order_qty, "
+            + "max_notional, max_position_qty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        sellerId, "Seller", "seller-key", "seller", "hash", 10000, 1_000_000, 100_000);
+
+    // Seed seller position so they can sell 100 IBM
+    jdbcTemplate.update(
+        "INSERT INTO positions (account_id, symbol, qty, avg_cost) VALUES (?, ?, ?, ?)",
+        sellerId, "IBM", 100, 100.00);
+
+    // Resting SELL LIMIT @ 100
+    CreateOrderRequest restingSellReq = new CreateOrderRequest();
+    restingSellReq.setAccountId(sellerId);
+    restingSellReq.setClientOrderId("rest-sell-1");
+    restingSellReq.setSymbol("IBM");
+    restingSellReq.setSide("SELL");
+    restingSellReq.setQty(100);
+    restingSellReq.setType("LIMIT");
+    restingSellReq.setLimitPrice(new java.math.BigDecimal("100.00"));
+    restingSellReq.setTimeInForce("DAY");
+    Order restingSell = orderService.submit(restingSellReq);
+    assertEquals("WORKING", restingSell.getStatus());
+
+    // Incoming BUY LIMIT @ 101 should match that resting SELL
+    CreateOrderRequest buyReq = new CreateOrderRequest();
+    buyReq.setAccountId(buyerId);
+    buyReq.setClientOrderId("buy-1");
+    buyReq.setSymbol("IBM");
+    buyReq.setSide("BUY");
+    buyReq.setQty(100);
+    buyReq.setType("LIMIT");
+    buyReq.setLimitPrice(new java.math.BigDecimal("101.00"));
+    buyReq.setTimeInForce("DAY");
+
+    Order buyOrder = orderService.submit(buyReq);
+    assertEquals("FILLED", buyOrder.getStatus());
+    assertEquals(100, buyOrder.getFilledQty());
+
+    // Both sides should now be FILLED at the resting price 100.00
+    Order updatedSell = jdbcTemplate.queryForObject(
+        "SELECT * FROM orders WHERE id = ?",
+        new BeanPropertyRowMapper<>(Order.class),
+        restingSell.getId());
+    assertNotNull(updatedSell);
+    assertEquals("FILLED", updatedSell.getStatus());
+
+    List<Fill> buyFills = jdbcTemplate.query(
+        "SELECT * FROM fills WHERE order_id = ?",
+        new BeanPropertyRowMapper<>(Fill.class),
+        buyOrder.getId());
+    assertEquals(1, buyFills.size());
+    assertEquals(100, buyFills.get(0).getQty());
+    assertEquals(0, buyFills.get(0).getPrice().compareTo(new java.math.BigDecimal("100.00")));
+
+    // Buyer position should now be +100 IBM
+    Integer buyerPosQty = jdbcTemplate.queryForObject(
+        "SELECT qty FROM positions WHERE account_id = ? AND symbol = ?",
+        Integer.class,
+        buyerId,
+        "IBM");
+    assertEquals(100, buyerPosQty.intValue());
+
+    // Seller position should now be 0 IBM
+    Integer sellerPosQty = jdbcTemplate.queryForObject(
+        "SELECT qty FROM positions WHERE account_id = ? AND symbol = ?",
+        Integer.class,
+        sellerId,
+        "IBM");
+    assertEquals(0, sellerPosQty.intValue());
+  }
+
+  @Test
+  void twapBuy_createsMultipleFillsAndPosition() {
+    UUID accountId = UUID.randomUUID();
+
+    jdbcTemplate.update(
+        "INSERT INTO accounts (id, name, auth_token, username, password_hash, max_order_qty, "
+            + "max_notional, max_position_qty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        accountId,
+        "TWAP Account",
+        "twap-key",
+        "twap_user",
+        "hash",
+        10000,
+        1_000_000,
+        100_000);
+
+    CreateOrderRequest twapReq = new CreateOrderRequest();
+    twapReq.setAccountId(accountId);
+    twapReq.setClientOrderId("twap-1");
+    twapReq.setSymbol("IBM");
+    twapReq.setSide("BUY");
+    twapReq.setQty(25);
+    twapReq.setType("TWAP");
+    twapReq.setTimeInForce("DAY");
+
+    Order twapOrder = orderService.submit(twapReq);
+    assertEquals("FILLED", twapOrder.getStatus());
+    assertEquals(25, twapOrder.getFilledQty());
+
+    List<Fill> twapFills = jdbcTemplate.query(
+        "SELECT * FROM fills WHERE order_id = ?",
+        new BeanPropertyRowMapper<>(Fill.class),
+        twapOrder.getId());
+    assertTrue(twapFills.size() >= 2);
+    int totalQty = twapFills.stream().mapToInt(Fill::getQty).sum();
+    assertEquals(25, totalQty);
+
+    Integer posQty = jdbcTemplate.queryForObject(
         "SELECT qty FROM positions WHERE account_id = ? AND symbol = ?",
         Integer.class,
         accountId,
         "IBM");
-    assertNotNull(positionQty);
-    assertEquals(50, positionQty.intValue());
+    assertEquals(25, posQty.intValue());
   }
 }
