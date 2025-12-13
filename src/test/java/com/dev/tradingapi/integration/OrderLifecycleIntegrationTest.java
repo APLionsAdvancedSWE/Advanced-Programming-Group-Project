@@ -10,6 +10,7 @@ import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.service.OrderService;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -34,6 +35,14 @@ class OrderLifecycleIntegrationTest {
 
   @Autowired
   private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void clearOrderBook() {
+        // Ensure each test starts with a clean order book so that
+        // demo data or previous tests do not affect matching.
+        jdbcTemplate.update("DELETE FROM fills");
+        jdbcTemplate.update("DELETE FROM orders");
+    }
 
   @Test
   void submitMarketOrder_persistsOrderFillsAndPositions() {
