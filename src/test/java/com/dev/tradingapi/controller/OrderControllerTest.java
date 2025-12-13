@@ -140,7 +140,8 @@ class OrderControllerTest {
     assertNotNull(response);
     assertEquals(HttpStatus.CREATED, response.getStatusCode());
     assertNotNull(response.getBody());
-    assertEquals(5, response.getBody().size(), "TWAP order with qty=200 should create 5 child orders");
+    assertEquals(5, response.getBody().size(),
+        "TWAP order with qty=200 should create 5 child orders");
     // Verify first child order
     Order firstOrder = response.getBody().get(0);
     assertEquals("TWAP", firstOrder.getType());

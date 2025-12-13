@@ -100,7 +100,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(100);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
         new BigDecimal("150.00"), Instant.now());
@@ -254,7 +255,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(50);
     engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 50,
         new BigDecimal("140.00"), Instant.now());
@@ -535,7 +537,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(3);
     engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     // Simulate fills for the single child order
     BigDecimal price = new BigDecimal("140.00");
@@ -590,7 +593,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(10);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 10,
         new BigDecimal("150.00"), Instant.now());
@@ -731,7 +735,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(0);
     engineOrder.setAvgFillPrice(null);
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
     List<Order> orders = orderService.submit(req);
@@ -773,7 +778,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(100);
     engineOrder.setAvgFillPrice(new BigDecimal("155.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
         new BigDecimal("155.00"), Instant.now());
@@ -823,7 +829,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(0);
     engineOrder.setAvgFillPrice(null);
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
     List<Order> orders = orderService.submit(req);
@@ -864,7 +871,8 @@ class OrderServiceTest {
     engineOrder.setFilledQty(200);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
+    when(executionService.createOrder(any(CreateOrderRequest.class)))
+        .thenReturn(List.of(engineOrder));
 
     Fill partialFill = new Fill(UUID.randomUUID(), engineOrder.getId(), 200,
         new BigDecimal("150.00"), Instant.now());
