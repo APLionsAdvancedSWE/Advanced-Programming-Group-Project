@@ -1357,10 +1357,12 @@ class ExecutionServiceTest {
     sellOrder2.setCreatedAt(Instant.now().minusSeconds(5)); // Later
 
     // Mock query to return both SELL orders (sorted by price ASC) for findMatchingOrders
+    // Note: findMatchingOrders for BUY LIMIT uses 3 params: symbol, accountId, matchingPrice
     lenient().when(jdbcTemplate.query(
         anyString(),
         any(org.springframework.jdbc.core.RowMapper.class),
         eq("AAPL"), // Symbol
+        any(UUID.class), // Account ID
         any(BigDecimal.class) // Limit price
     )).thenReturn(List.of(sellOrder1, sellOrder2));
     
