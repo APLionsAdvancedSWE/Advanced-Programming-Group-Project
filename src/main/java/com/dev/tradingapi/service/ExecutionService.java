@@ -128,6 +128,96 @@ public class ExecutionService {
   }
 
   /**
+   * Matches an incoming order against the order book up to maxQty.
+   * Returns fills generated for the incoming order.
+   */
+  private int matchAgainstBook(
+      Order incomingOrder,
+      int maxQty,
+      BigDecimal matchingPrice,
+      BigDecimal marketPrice,
+      Instant now,
+      List<Fill> fills
+    ) {
+  int remainingQty = maxQty;
+
+  List<Order> matchingOrders = findMatchingOrders(incomingOrder, matchingPrice);
+
+  for (Order restingOrder : matchingOrders) {
+    if (remainingQty <= 0) {
+      break;
+    }
+
+    Order currentRestingOrder = getOrderById(restingOrder.getId());
+    if (currentRestingOrder == null) {
+      continue;
+    }
+
+    if ("FILLED".equals(currentRestingOrder.getStatus())
+        || "CANCELLED".equals(currentRestingOrder.getStatus())) {
+      continue;
+    }
+
+    int restingRemaining =
+        currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
+    if (restingRemaining <= 0) {
+      continue;
+    }
+
+    int fillQty = Math.min(remainingQty, restingRemaining);
+
+    BigDecimal executionPrice =
+        currentRestingOrder.getLimitPrice() != null
+            ? currentRestingOrder.getLimitPrice()
+            : marketPrice;
+
+    // Price protection (LIMIT only)
+    if (matchingPrice != null) {
+      if ("BUY".equalsIgnoreCase(incomingOrder.getSide())
+          && executionPrice.compareTo(matchingPrice) > 0) {
+        continue;
+      }
+      if ("SELL".equalsIgnoreCase(incomingOrder.getSide())
+          && executionPrice.compareTo(matchingPrice) < 0) {
+        continue;
+      }
+    }
+
+    // Incoming fill
+    Fill incomingFill = new Fill(
+        UUID.randomUUID(),
+        incomingOrder.getId(),
+        fillQty,
+        executionPrice,
+        now
+    );
+    fills.add(incomingFill);
+    fillRepository.save(incomingFill);
+
+    // Resting fill
+    Fill restingFill = new Fill(
+        UUID.randomUUID(),
+        currentRestingOrder.getId(),
+        fillQty,
+        executionPrice,
+        now
+    );
+    fillRepository.save(restingFill);
+
+    currentRestingOrder.setFilledQty(
+        currentRestingOrder.getFilledQty() + fillQty
+    );
+    updateRestingOrderStatus(currentRestingOrder);
+    updatePositionsForFill(currentRestingOrder, restingFill);
+
+    remainingQty -= fillQty;
+  }
+
+  return remainingQty;
+  }
+
+
+  /**
    * Generates fills for an order by matching against existing orders in the order book.
    * 
    * <p>Implements price-time priority matching:
@@ -144,6 +234,7 @@ public class ExecutionService {
    * @param mark current market quote
    * @return list of generated fills (may be empty if no matches found)
    */
+  
   private List<Fill> generateFills(Order order, Quote mark) {
     List<Fill> fills = new ArrayList<>();
     BigDecimal marketPrice = mark.getLast();
@@ -155,95 +246,22 @@ public class ExecutionService {
   
     BigDecimal matchingPrice = null;
     if ("LIMIT".equalsIgnoreCase(order.getType())) {
-      if (order.getLimitPrice() == null) {
-        return fills;
-      }
       matchingPrice = order.getLimitPrice();
-    } else if ("MARKET".equalsIgnoreCase(order.getType())) {
-      if (order.getLimitPrice() != null) {
-        matchingPrice = order.getLimitPrice();
-      }
-    } else {
-      return fills;
     }
   
-    List<Order> matchingOrders = findMatchingOrders(order, matchingPrice);
-    int remainingQty = order.getQty();
-  
-    for (Order restingOrder : matchingOrders) {
-      if (remainingQty <= 0) {
-        break;
-      }
-  
-      Order currentRestingOrder = getOrderById(restingOrder.getId());
-      if (currentRestingOrder == null) {
-        continue;
-      }
-      
-      if ("FILLED".equals(currentRestingOrder.getStatus()) 
-          || "CANCELLED".equals(currentRestingOrder.getStatus())) {
-        continue;
-      }
-  
-      int restingRemaining = currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
-      if (restingRemaining <= 0) {
-        continue;
-      }
-  
-      int fillQty = Math.min(remainingQty, restingRemaining);
-  
-      BigDecimal executionPrice;
-      if (currentRestingOrder.getLimitPrice() != null) {
-        executionPrice = currentRestingOrder.getLimitPrice();
-      } else {
-        System.err.println("WARNING: Resting order " + currentRestingOrder.getId() 
-            + " has null limitPrice but status is " + currentRestingOrder.getStatus()
-            + ". Using market price " + marketPrice + " as fallback.");
-        executionPrice = marketPrice;
-      }
-  
-      if (matchingPrice != null) {
-        if ("BUY".equalsIgnoreCase(order.getSide())) {
-          if (executionPrice.compareTo(matchingPrice) > 0) {
-            continue;
-          }
-        } else {
-          if (executionPrice.compareTo(matchingPrice) < 0) {
-            continue;
-          }
-        }
-      }
-  
-      Fill incomingFill = new Fill(
-          UUID.randomUUID(),
-          order.getId(),
-          fillQty,
-          executionPrice,
-          now
-      );
-      fills.add(incomingFill);
-      fillRepository.save(incomingFill);
-  
-      Fill restingFill = new Fill(
-          UUID.randomUUID(),
-          currentRestingOrder.getId(),
-          fillQty,
-          executionPrice,
-          now
-      );
-      fillRepository.save(restingFill);
-  
-      currentRestingOrder.setFilledQty(currentRestingOrder.getFilledQty() + fillQty);
-      updateRestingOrderStatus(currentRestingOrder);
-  
-      updatePositionsForFill(currentRestingOrder, restingFill);
-  
-      remainingQty -= fillQty;
-    }
+    matchAgainstBook(
+        order,
+        order.getQty(),
+        matchingPrice,
+        marketPrice,
+        now,
+        fills
+    );
   
     return fills;
   }
-
+  
+  
   /**
    * Generates TWAP fills using synthetic liquidity (not matched against order book).
    * TWAP orders are executed in slices over time using market price.
@@ -253,42 +271,54 @@ public class ExecutionService {
    * @param now current timestamp
    * @return list of TWAP fills
    */
+
   private List<Fill> generateTwapFills(Order order, Quote mark, Instant now) {
     List<Fill> fills = new ArrayList<>();
-    BigDecimal twapPrice = mark.getLast();
+    BigDecimal marketPrice = mark.getLast();
+  
     int totalQty = order.getQty();
-    int slices = Math.min(10, totalQty);
-    int baseSliceQty = totalQty / slices;
-    int remainder = totalQty % slices;
+
+    int numSlices;
+    if (totalQty >= 1000) {
+      numSlices = 10;
+    } else if (totalQty >= 100) {
+      numSlices = 5;
+    } else if (totalQty >= 50) {
+      numSlices = 2;
+    } else {
+      numSlices = 1;
+    }
+  
+    numSlices = Math.min(numSlices, 10);
+  
+    int baseSliceQty = totalQty / numSlices;
+    int remainder = totalQty % numSlices;
   
     int remainingQty = totalQty;
   
-    for (int i = 0; i < slices && remainingQty > 0; i++) {
+    for (int i = 0; i < numSlices && remainingQty > 0; i++) {
       int sliceQty = baseSliceQty + (i < remainder ? 1 : 0);
-      sliceQty = Math.min(sliceQty, remainingQty);
-
-      int fillQty = sliceQty;
-      if (fillQty <= 0) {
-        continue;
-      }
   
-      Fill fill = new Fill(
-          UUID.randomUUID(),
-          order.getId(),
-          fillQty,
-          twapPrice,
-          now.plusSeconds(i)
+      int afterSlice = matchAgainstBook(
+          order,
+          sliceQty,
+          null,          
+          marketPrice,
+          now,
+          fills
       );
   
-      fills.add(fill);
-      fillRepository.save(fill);
+      int filledThisSlice = sliceQty - afterSlice;
+      remainingQty -= filledThisSlice;
   
-      remainingQty -= fillQty;
+      // No liquidity → stop TWAP early
+      if (filledThisSlice == 0) {
+        break;
+      }
     }
   
     return fills;
   }
-
   /**
    * Finds matching orders from the order book based on price-time priority.
    * 

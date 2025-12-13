@@ -257,10 +257,53 @@ class ExecutionServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (10 slices of 10 each)
+    // Mock matching SELL orders for each TWAP slice
+    // qty=100 -> numSlices=5, baseSliceQty=20, remainder=0 -> 5 slices of 20 each
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class))).thenAnswer(invocation -> {
+      List<Order> freshOrders = new ArrayList<>();
+      for (int i = 0; i < 5; i++) {
+        Order sellOrder = new Order();
+        sellOrder.setId(UUID.randomUUID());
+        sellOrder.setAccountId(UUID.randomUUID());
+        sellOrder.setSymbol("AAPL");
+        sellOrder.setSide("SELL");
+        sellOrder.setQty(20);
+        sellOrder.setFilledQty(0);
+        sellOrder.setType("MARKET");
+        sellOrder.setLimitPrice(null);
+        sellOrder.setStatus("WORKING");
+        sellOrder.setCreatedAt(Instant.now());
+        freshOrders.add(sellOrder);
+      }
+      return freshOrders;
+    });
+    lenient().when(jdbcTemplate.queryForObject(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+        .thenAnswer(invocation -> {
+          Object[] args = invocation.getArguments();
+          if (args.length >= 3 && args[2] instanceof UUID) {
+            UUID orderId = (UUID) args[2];
+            Order order = new Order();
+            order.setId(orderId);
+            order.setAccountId(UUID.randomUUID());
+            order.setSymbol("AAPL");
+            order.setSide("SELL");
+            order.setQty(20);
+            order.setFilledQty(0);
+            order.setType("MARKET");
+            order.setLimitPrice(null);
+            order.setStatus("WORKING");
+            order.setCreatedAt(Instant.now());
+            return order;
+          }
+          return null;
+        });
+    
+    // Mock fillRepository.findByOrderId to return TWAP fills (5 slices of 20 each)
     List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 10; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 10, 
+    for (int i = 0; i < 5; i++) {
+      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 20, 
           new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
     }
     when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
@@ -274,8 +317,8 @@ class ExecutionServiceTest {
     assertEquals(100, result.getQty());
     // TWAP should use market price (152.00), not limit price
     assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice());
-    // TWAP creates multiple fills (slices) - verify it's reasonable (≤ 10 slices)
-    verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class));
+    // TWAP creates multiple fills (slices) - verify it's reasonable (5 slices)
+    verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class)); // 5 incoming + 5 resting
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(marketService, times(1)).getQuote("AAPL");
   }
@@ -291,9 +334,8 @@ class ExecutionServiceTest {
     CreateOrderRequest request = new CreateOrderRequest(
         accountId, "CLIENT-017", "AAPL", "BUY", 1000, "TWAP", null, "DAY");
     
-    // Low volume means limited liquidity per slice (min 50, max 10000)
-    // With volume 100, liquidity = max(50, min(10, 10000)) = 50 per slice
-    // TWAP splits 1000 into 10 slices of 100 each
+    // Low volume means limited liquidity per slice
+    // TWAP splits 1000 into 10 slices of 100 each (qty>=1000 -> numSlices=10)
     // Each slice needs 100, but only 50 available, so partial fill
     Quote quote = new Quote("AAPL", 
         new BigDecimal("150.00"), 
@@ -307,6 +349,27 @@ class ExecutionServiceTest {
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
+    
+    // Mock matching SELL order with limited quantity (50) - only first slice fills
+    Order matchingSellOrder = new Order();
+    matchingSellOrder.setId(UUID.randomUUID());
+    matchingSellOrder.setAccountId(UUID.randomUUID());
+    matchingSellOrder.setSymbol("AAPL");
+    matchingSellOrder.setSide("SELL");
+    matchingSellOrder.setQty(50);
+    matchingSellOrder.setFilledQty(0);
+    matchingSellOrder.setType("MARKET");
+    matchingSellOrder.setLimitPrice(null);
+    matchingSellOrder.setStatus("WORKING");
+    matchingSellOrder.setCreatedAt(Instant.now());
+    // First query returns the matching order, subsequent queries return empty (no more liquidity)
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class)))
+        .thenReturn(List.of(matchingSellOrder))
+        .thenReturn(List.of()); // No more liquidity after first slice
+    when(jdbcTemplate.queryForObject(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+        .thenReturn(matchingSellOrder);
     
     // Mock fillRepository.findByOrderId to return TWAP fill (1 slice of 50)
     Fill twapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 50, 
@@ -352,10 +415,53 @@ class ExecutionServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (multiple slices)
+    // Mock matching SELL orders for each TWAP slice
+    // qty=50 -> numSlices=2, baseSliceQty=25, remainder=0 -> 2 slices of 25 each
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class))).thenAnswer(invocation -> {
+      List<Order> freshOrders = new ArrayList<>();
+      for (int i = 0; i < 2; i++) {
+        Order sellOrder = new Order();
+        sellOrder.setId(UUID.randomUUID());
+        sellOrder.setAccountId(UUID.randomUUID());
+        sellOrder.setSymbol("AAPL");
+        sellOrder.setSide("SELL");
+        sellOrder.setQty(25);
+        sellOrder.setFilledQty(0);
+        sellOrder.setType("MARKET");
+        sellOrder.setLimitPrice(null);
+        sellOrder.setStatus("WORKING");
+        sellOrder.setCreatedAt(Instant.now());
+        freshOrders.add(sellOrder);
+      }
+      return freshOrders;
+    });
+    lenient().when(jdbcTemplate.queryForObject(anyString(), 
+        any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
+        .thenAnswer(invocation -> {
+          Object[] args = invocation.getArguments();
+          if (args.length >= 3 && args[2] instanceof UUID) {
+            UUID orderId = (UUID) args[2];
+            Order order = new Order();
+            order.setId(orderId);
+            order.setAccountId(UUID.randomUUID());
+            order.setSymbol("AAPL");
+            order.setSide("SELL");
+            order.setQty(25);
+            order.setFilledQty(0);
+            order.setType("MARKET");
+            order.setLimitPrice(null);
+            order.setStatus("WORKING");
+            order.setCreatedAt(Instant.now());
+            return order;
+          }
+          return null;
+        });
+    
+    // Mock fillRepository.findByOrderId to return TWAP fills (2 slices of 25 each)
     List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 5; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 10, 
+    for (int i = 0; i < 2; i++) {
+      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 25, 
           new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
     }
     when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
@@ -366,15 +472,15 @@ class ExecutionServiceTest {
     assertEquals("TWAP", result.getType());
     // Should use market price (152.00), not limit price (140.00)
     assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice());
-    // TWAP creates fills - verify reasonable count (≤ 10 slices)
+    // TWAP creates fills - verify reasonable count (2 slices)
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class));
+    verify(fillRepository, atMost(4)).save(any(com.dev.tradingapi.model.Fill.class)); // 2 incoming + 2 resting
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
-   * Test TWAP order with small quantity - should still create multiple slices.
-   * For qty=10, should create 10 slices of 1 each.
+   * Test TWAP order with small quantity - should create 1 slice.
+   * For qty=10, should create 1 slice of 10.
    */
   @Test
   void testCreateOrder_TwapOrder_SmallQuantity_MultipleSlices() {
@@ -395,20 +501,51 @@ class ExecutionServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    Order mockOrder = new Order();
-    mockOrder.setId(UUID.randomUUID());
-    mockOrder.setSymbol("AAPL");
-    mockOrder.setAccountId(accountId);
-    when(jdbcTemplate.queryForObject(anyString(), 
+    // Mock matching SELL orders for each TWAP slice
+    // qty=10 -> numSlices=1, baseSliceQty=10, remainder=0 -> 1 slice of 10
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class))).thenAnswer(invocation -> {
+      List<Order> freshOrders = new ArrayList<>();
+      Order sellOrder = new Order();
+      sellOrder.setId(UUID.randomUUID());
+      sellOrder.setAccountId(UUID.randomUUID());
+      sellOrder.setSymbol("AAPL");
+      sellOrder.setSide("SELL");
+      sellOrder.setQty(10);
+      sellOrder.setFilledQty(0);
+      sellOrder.setType("MARKET");
+      sellOrder.setLimitPrice(null);
+      sellOrder.setStatus("WORKING");
+      sellOrder.setCreatedAt(Instant.now());
+      freshOrders.add(sellOrder);
+      return freshOrders;
+    });
+    lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
-        .thenReturn(mockOrder);
+        .thenAnswer(invocation -> {
+          Object[] args = invocation.getArguments();
+          if (args.length >= 3 && args[2] instanceof UUID) {
+            UUID orderId = (UUID) args[2];
+            Order order = new Order();
+            order.setId(orderId);
+            order.setAccountId(UUID.randomUUID());
+            order.setSymbol("AAPL");
+            order.setSide("SELL");
+            order.setQty(10);
+            order.setFilledQty(0);
+            order.setType("MARKET");
+            order.setLimitPrice(null);
+            order.setStatus("WORKING");
+            order.setCreatedAt(Instant.now());
+            return order;
+          }
+          return null;
+        });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (10 slices of 1 each)
+    // Mock fillRepository.findByOrderId to return TWAP fill (1 slice of 10)
     List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 10; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 1, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
+    twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 10, 
+        new BigDecimal("152.00"), Instant.now()));
     when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
 
     Order result = executionService.createOrder(request);
@@ -417,8 +554,8 @@ class ExecutionServiceTest {
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
     assertEquals(10, result.getFilledQty());
-    // Should create 10 slices (one per share)
-    verify(fillRepository, times(10)).save(any(com.dev.tradingapi.model.Fill.class));
+    // Should create 1 slice - 1 incoming + 1 resting fill
+    verify(fillRepository, times(2)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
@@ -445,13 +582,49 @@ class ExecutionServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    Order mockOrder = new Order();
-    mockOrder.setId(UUID.randomUUID());
-    mockOrder.setSymbol("AAPL");
-    mockOrder.setAccountId(accountId);
-    when(jdbcTemplate.queryForObject(anyString(), 
+    // Mock matching SELL orders for each TWAP slice (10 slices of 100 each)
+    // Create a factory to return fresh orders for each slice
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class))).thenAnswer(invocation -> {
+      List<Order> freshOrders = new ArrayList<>();
+      for (int i = 0; i < 10; i++) {
+        Order sellOrder = new Order();
+        sellOrder.setId(UUID.randomUUID());
+        sellOrder.setAccountId(UUID.randomUUID());
+        sellOrder.setSymbol("AAPL");
+        sellOrder.setSide("SELL");
+        sellOrder.setQty(100);
+        sellOrder.setFilledQty(0);
+        sellOrder.setType("MARKET");
+        sellOrder.setLimitPrice(null);
+        sellOrder.setStatus("WORKING");
+        sellOrder.setCreatedAt(Instant.now());
+        freshOrders.add(sellOrder);
+      }
+      return freshOrders;
+    });
+    lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
-        .thenReturn(mockOrder);
+        .thenAnswer(invocation -> {
+          Object[] args = invocation.getArguments();
+          if (args.length >= 3 && args[2] instanceof UUID) {
+            UUID orderId = (UUID) args[2];
+            // Return a fresh order with the same ID
+            Order order = new Order();
+            order.setId(orderId);
+            order.setAccountId(UUID.randomUUID());
+            order.setSymbol("AAPL");
+            order.setSide("SELL");
+            order.setQty(100);
+            order.setFilledQty(0);
+            order.setType("MARKET");
+            order.setLimitPrice(null);
+            order.setStatus("WORKING");
+            order.setCreatedAt(Instant.now());
+            return order;
+          }
+          return null;
+        });
     
     // Mock fillRepository.findByOrderId to return TWAP fills (10 slices of 100 each)
     List<Fill> twapFills = new ArrayList<>();
@@ -467,14 +640,14 @@ class ExecutionServiceTest {
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
     assertEquals(1000, result.getFilledQty());
-    // Should create exactly 10 slices (capped at 10), each of 100 shares
-    verify(fillRepository, times(10)).save(any(com.dev.tradingapi.model.Fill.class));
+    // Should create exactly 10 slices (capped at 10), each of 100 shares - 10 incoming + 10 resting fills
+    verify(fillRepository, times(20)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(marketService, times(1)).getQuote("AAPL");
   }
 
   /**
    * Test TWAP order with quantity that doesn't divide evenly.
-   * For qty=105, should create 10 slices with remainder distributed.
+   * For qty=105, should create 5 slices of 21 each (no remainder).
    */
   @Test
   void testCreateOrder_TwapOrder_UnevenQuantity_RemainderDistribution() {
@@ -495,23 +668,54 @@ class ExecutionServiceTest {
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
     doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
-    Order mockOrder = new Order();
-    mockOrder.setId(UUID.randomUUID());
-    mockOrder.setSymbol("AAPL");
-    mockOrder.setAccountId(accountId);
-    when(jdbcTemplate.queryForObject(anyString(), 
+    // Mock matching SELL orders for each TWAP slice
+    // qty=105 -> numSlices=5, baseSliceQty=21, remainder=0 -> 5 slices of 21 each
+    when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(Object[].class))).thenAnswer(invocation -> {
+      List<Order> freshOrders = new ArrayList<>();
+      for (int i = 0; i < 5; i++) {
+        Order sellOrder = new Order();
+        sellOrder.setId(UUID.randomUUID());
+        sellOrder.setAccountId(UUID.randomUUID());
+        sellOrder.setSymbol("AAPL");
+        sellOrder.setSide("SELL");
+        sellOrder.setQty(21);
+        sellOrder.setFilledQty(0);
+        sellOrder.setType("MARKET");
+        sellOrder.setLimitPrice(null);
+        sellOrder.setStatus("WORKING");
+        sellOrder.setCreatedAt(Instant.now());
+        freshOrders.add(sellOrder);
+      }
+      return freshOrders;
+    });
+    lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
-        .thenReturn(mockOrder);
+        .thenAnswer(invocation -> {
+          Object[] args = invocation.getArguments();
+          if (args.length >= 3 && args[2] instanceof UUID) {
+            UUID orderId = (UUID) args[2];
+            Order order = new Order();
+            order.setId(orderId);
+            order.setAccountId(UUID.randomUUID());
+            order.setSymbol("AAPL");
+            order.setSide("SELL");
+            order.setQty(21);
+            order.setFilledQty(0);
+            order.setType("MARKET");
+            order.setLimitPrice(null);
+            order.setStatus("WORKING");
+            order.setCreatedAt(Instant.now());
+            return order;
+          }
+          return null;
+        });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (10 slices: 5 of 11, 5 of 10)
+    // Mock fillRepository.findByOrderId to return TWAP fills (5 slices of 21 each)
     List<Fill> twapFills = new ArrayList<>();
     for (int i = 0; i < 5; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 11, 
+      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 21, 
           new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
-    for (int i = 0; i < 5; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 10, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i + 5)));
     }
     when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
 
@@ -521,7 +725,7 @@ class ExecutionServiceTest {
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
     assertEquals(105, result.getFilledQty());
-    // Should create 10 slices: 5 slices of 11, 5 slices of 10 (105 = 10*10 + 5)
+    // Should create 5 slices of 21 each - 5 incoming + 5 resting fills
     verify(fillRepository, times(10)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(marketService, times(1)).getQuote("AAPL");
   }
