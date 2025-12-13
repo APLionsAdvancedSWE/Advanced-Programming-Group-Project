@@ -188,6 +188,7 @@ class OrderLifecycleIntegrationTest {
   @Test
   void twapBuy_createsMultipleFillsAndPosition() {
     UUID accountId = UUID.randomUUID();
+    UUID sellerAccountId = UUID.randomUUID();
 
     jdbcTemplate.update(
         "INSERT INTO accounts (id, name, auth_token, username, password_hash, max_order_qty, "
@@ -201,6 +202,43 @@ class OrderLifecycleIntegrationTest {
         1_000_000,
         100_000);
 
+    jdbcTemplate.update(
+        "INSERT INTO accounts (id, name, auth_token, username, password_hash, max_order_qty, "
+            + "max_notional, max_position_qty) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        sellerAccountId,
+        "Seller Account",
+        "seller-key",
+        "seller_user",
+        "hash",
+        10000,
+        1_000_000,
+        100_000);
+
+    // Create matching SELL orders in the book for TWAP to match against
+    // TWAP splits 25 into slices of 10, 10, 5 - need matching SELL orders for each slice
+    // Create enough orders to fill all 25 shares
+    for (int i = 0; i < 3; i++) {
+      UUID sellOrderId = UUID.randomUUID();
+      int qty = (i < 2) ? 10 : 5;
+      jdbcTemplate.update(
+          "INSERT INTO orders (id, account_id, client_order_id, symbol, side, qty, type, "
+              + "limit_price, time_in_force, status, filled_qty, avg_fill_price, created_at) "
+              + "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          sellOrderId,
+          sellerAccountId,
+          "sell-" + i,
+          "IBM",
+          "SELL",
+          qty,
+          "MARKET",
+          null,
+          "DAY",
+          "WORKING",
+          0,
+          null,
+          java.sql.Timestamp.from(java.time.Instant.now()));
+    }
+
     CreateOrderRequest twapReq = new CreateOrderRequest();
     twapReq.setAccountId(accountId);
     twapReq.setClientOrderId("twap-1");
@@ -211,6 +249,7 @@ class OrderLifecycleIntegrationTest {
     twapReq.setTimeInForce("DAY");
 
     Order twapOrder = orderService.submit(twapReq);
+    // With matching orders, TWAP should fill completely
     assertEquals("FILLED", twapOrder.getStatus());
     assertEquals(25, twapOrder.getFilledQty());
 
