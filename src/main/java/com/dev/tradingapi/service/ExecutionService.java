@@ -138,82 +138,82 @@ public class ExecutionService {
       BigDecimal marketPrice,
       Instant now,
       List<Fill> fills
-    ) {
-  int remainingQty = maxQty;
+  ) {
+    int remainingQty = maxQty;
 
-  List<Order> matchingOrders = findMatchingOrders(incomingOrder, matchingPrice);
+    List<Order> matchingOrders = findMatchingOrders(incomingOrder, matchingPrice);
 
-  for (Order restingOrder : matchingOrders) {
-    if (remainingQty <= 0) {
-      break;
-    }
+    for (Order restingOrder : matchingOrders) {
+      if (remainingQty <= 0) {
+        break;
+      }
 
-    Order currentRestingOrder = getOrderById(restingOrder.getId());
-    if (currentRestingOrder == null) {
-      continue;
-    }
-
-    if ("FILLED".equals(currentRestingOrder.getStatus())
-        || "CANCELLED".equals(currentRestingOrder.getStatus())) {
-      continue;
-    }
-
-    int restingRemaining =
-        currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
-    if (restingRemaining <= 0) {
-      continue;
-    }
-
-    int fillQty = Math.min(remainingQty, restingRemaining);
-
-    BigDecimal executionPrice =
-        currentRestingOrder.getLimitPrice() != null
-            ? currentRestingOrder.getLimitPrice()
-            : marketPrice;
-
-    // Price protection (LIMIT only)
-    if (matchingPrice != null) {
-      if ("BUY".equalsIgnoreCase(incomingOrder.getSide())
-          && executionPrice.compareTo(matchingPrice) > 0) {
+      Order currentRestingOrder = getOrderById(restingOrder.getId());
+      if (currentRestingOrder == null) {
         continue;
       }
-      if ("SELL".equalsIgnoreCase(incomingOrder.getSide())
-          && executionPrice.compareTo(matchingPrice) < 0) {
+
+      if ("FILLED".equals(currentRestingOrder.getStatus())
+          || "CANCELLED".equals(currentRestingOrder.getStatus())) {
         continue;
       }
+
+      int restingRemaining =
+          currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
+      if (restingRemaining <= 0) {
+        continue;
+      }
+
+      int fillQty = Math.min(remainingQty, restingRemaining);
+
+      BigDecimal executionPrice =
+          currentRestingOrder.getLimitPrice() != null
+              ? currentRestingOrder.getLimitPrice()
+              : marketPrice;
+
+      // Price protection (LIMIT only)
+      if (matchingPrice != null) {
+        if ("BUY".equalsIgnoreCase(incomingOrder.getSide())
+            && executionPrice.compareTo(matchingPrice) > 0) {
+          continue;
+        }
+        if ("SELL".equalsIgnoreCase(incomingOrder.getSide())
+            && executionPrice.compareTo(matchingPrice) < 0) {
+          continue;
+        }
+      }
+
+      // Incoming fill
+      Fill incomingFill = new Fill(
+          UUID.randomUUID(),
+          incomingOrder.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
+      fills.add(incomingFill);
+      fillRepository.save(incomingFill);
+
+      // Resting fill
+      Fill restingFill = new Fill(
+          UUID.randomUUID(),
+          currentRestingOrder.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
+      fillRepository.save(restingFill);
+
+      currentRestingOrder.setFilledQty(
+          currentRestingOrder.getFilledQty() + fillQty
+      );
+      updateRestingOrderStatus(currentRestingOrder);
+      updatePositionsForFill(currentRestingOrder, restingFill);
+
+      remainingQty -= fillQty;
     }
 
-    // Incoming fill
-    Fill incomingFill = new Fill(
-        UUID.randomUUID(),
-        incomingOrder.getId(),
-        fillQty,
-        executionPrice,
-        now
-    );
-    fills.add(incomingFill);
-    fillRepository.save(incomingFill);
-
-    // Resting fill
-    Fill restingFill = new Fill(
-        UUID.randomUUID(),
-        currentRestingOrder.getId(),
-        fillQty,
-        executionPrice,
-        now
-    );
-    fillRepository.save(restingFill);
-
-    currentRestingOrder.setFilledQty(
-        currentRestingOrder.getFilledQty() + fillQty
-    );
-    updateRestingOrderStatus(currentRestingOrder);
-    updatePositionsForFill(currentRestingOrder, restingFill);
-
-    remainingQty -= fillQty;
-  }
-
-  return remainingQty;
+    return remainingQty;
   }
 
 
@@ -319,6 +319,7 @@ public class ExecutionService {
   
     return fills;
   }
+
   /**
    * Finds matching orders from the order book based on price-time priority.
    * 
