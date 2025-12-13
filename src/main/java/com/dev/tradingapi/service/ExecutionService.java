@@ -114,7 +114,7 @@ public class ExecutionService {
 
     List<Fill> fills = generateFills(order, mark);
     updatePositions(order, fills);
-    updateOrderStatus(order, fills);
+    updateOrderStatus(order);
 
     return order;
   }
@@ -219,7 +219,6 @@ public class ExecutionService {
       Fill restingFill = new Fill(
           UUID.randomUUID(),
           currentRestingOrder.getId(),
-          currentRestingOrder.getId(),
           fillQty,
           executionPrice,
           now
@@ -239,7 +238,7 @@ public class ExecutionService {
         && "BUY".equalsIgnoreCase(order.getSide())
         && "MARKET".equalsIgnoreCase(order.getType())
         && order.getLimitPrice() == null
-        && isOrderBookEmpty(order.getSymbol(), order.getSide())) {
+        && isCompletelyEmptyBook(order.getSymbol())) {
       int fillQty = remainingQty;
       BigDecimal executionPrice = marketPrice;
       
@@ -413,8 +412,9 @@ public class ExecutionService {
   }
 
   /**
-   * Checks if the order book is empty for a given symbol and side.
-   * Used to determine if this is the first order (bootstrapping scenario).
+   * Checks if the order book is completely empty for a given symbol.
+   * Used to determine if this is the very first order (bootstrapping scenario).
+   * Once any order exists, bootstrapping is permanently disabled.
    *
    * @param symbol the trading symbol
    * @return true if no orders exist for this symbol, false otherwise
@@ -603,22 +603,6 @@ public class ExecutionService {
     }
   }
 
-  /**
-   * Retrieves an order by its ID from the database.
-   * Returns null if the order doesn't exist.
-   *
-   * @param orderId the order identifier
-   * @return the order if found, null otherwise
-   */
-  private Order getOrderById(UUID orderId) {
-    String sql = "SELECT * FROM orders WHERE id = ?";
-    try {
-      List<Order> orders = jdbcTemplate.query(sql, new OrderMapper(), orderId);
-      return orders.isEmpty() ? null : orders.get(0);
-    } catch (Exception e) {
-      return null;
-    }
-  }
 
   /**
    * Saves an order to the database.
