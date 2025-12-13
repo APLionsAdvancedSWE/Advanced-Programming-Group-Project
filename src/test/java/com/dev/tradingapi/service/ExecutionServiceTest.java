@@ -21,6 +21,7 @@ import com.dev.tradingapi.exception.NotFoundException;
 import com.dev.tradingapi.exception.RiskException;
 import com.dev.tradingapi.model.Fill;
 import com.dev.tradingapi.model.Order;
+import com.dev.tradingapi.model.Position;
 import com.dev.tradingapi.model.Quote;
 import com.dev.tradingapi.repository.FillRepository;
 import java.lang.reflect.Method;
@@ -613,8 +614,7 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
     
-    // Mock isCompletelyEmptyBook check - return > 0 (order book exists, not first order)
-    // This prevents bootstrapping for LIMIT orders
+    // Mock isOrderBookEmpty check - return > 0 (order book exists, not first order)
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(1);
     
@@ -656,6 +656,11 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    
+    // Mock position check - account has enough shares to sell (100 shares)
+    Position position = new Position(accountId, "AAPL", 100, new BigDecimal("150.00"));
+    when(jdbcTemplate.queryForObject(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
+        any(UUID.class), any(String.class))).thenReturn(position);
     
     // Mock query to return empty list (no matching BUY orders)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
@@ -899,17 +904,17 @@ class ExecutionServiceTest {
     when(marketService.getQuote("AAPL")).thenReturn(quote);
     doNothing().when(riskService).validate(request, quote);
     when(jdbcTemplate.update(anyString(), any(Object[].class))).thenReturn(1);
+    lenient().doNothing().when(fillRepository).save(any(com.dev.tradingapi.model.Fill.class));
     
     // Mock query to return empty list (no matching SELL orders)
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
     
-    // Mock isCompletelyEmptyBook check - return 0 (empty order book, first order)
-    // But LIMIT orders don't bootstrap, so this won't be used for bootstrapping
+    // Mock isOrderBookEmpty check - return 0 (empty order book, first order)
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(0);
     
-    // Mock fillRepository.findByOrderId to return empty (no fills for LIMIT order)
+    // Mock fillRepository.findByOrderId to return empty (no fills - LIMIT orders don't bootstrap)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
     Order result = executionService.createOrder(request);
@@ -918,10 +923,11 @@ class ExecutionServiceTest {
     assertEquals("LIMIT", result.getType());
     assertEquals("BUY", result.getSide());
     assertEquals(new BigDecimal("150.00"), result.getLimitPrice());
-    assertEquals("WORKING", result.getStatus()); // LIMIT orders don't bootstrap, stay WORKING
+    assertEquals("WORKING", result.getStatus()); // LIMIT orders don't bootstrap - stay WORKING
     assertEquals(0, result.getFilledQty());
     assertEquals(null, result.getAvgFillPrice());
     verify(marketService, times(1)).getQuote("AAPL");
+    verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(fillRepository, times(0)).save(any(com.dev.tradingapi.model.Fill.class));
   }
 
@@ -952,10 +958,9 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
     
-    // Mock isCompletelyEmptyBook check - return > 0 (order book exists, not first order)
-    // This prevents bootstrapping for LIMIT orders
+    // Mock isOrderBookEmpty check - return > 0 (order book exists, not first order)
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(1); // At least one order exists in system
+        .thenReturn(1); // At least one SELL order exists in system
 
     Order result = executionService.createOrder(request);
 
@@ -1057,8 +1062,8 @@ class ExecutionServiceTest {
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
     assertEquals("BUY", result.getSide());
-    // MARKET order with no fills gets CANCELLED (not WORKING) - they don't rest in the book
-    assertEquals("CANCELLED", result.getStatus());
+    // MARKET order with no fills stays WORKING (not CANCELLED) - they can rest in the book
+    assertEquals("WORKING", result.getStatus());
     assertEquals(0, result.getFilledQty());
     assertEquals(null, result.getAvgFillPrice());
     verify(marketService, times(1)).getQuote("AAPL");
@@ -1115,21 +1120,26 @@ class ExecutionServiceTest {
     sellOrder2.setType("LIMIT");
     sellOrder2.setCreatedAt(Instant.now().minusSeconds(5)); // Later
 
-    // Mock query to return both SELL orders (sorted by price ASC) - for findMatchingOrders
-    // This handles the LIMIT BUY query: query(sql, mapper, "AAPL", 155.00)
-    lenient().when(jdbcTemplate.query(anyString(), 
-        any(org.springframework.jdbc.core.RowMapper.class), 
-        eq("AAPL"), any(BigDecimal.class)))
-        .thenReturn(List.of(sellOrder1, sellOrder2));
+    // Mock query to return both SELL orders (sorted by price ASC) for findMatchingOrders
+    lenient().when(jdbcTemplate.query(
+        anyString(),
+        any(org.springframework.jdbc.core.RowMapper.class),
+        eq("AAPL"), // Symbol
+        any(BigDecimal.class) // Limit price
+    )).thenReturn(List.of(sellOrder1, sellOrder2));
     
-    // Mock getOrderById calls that re-read orders during matching
-    // This handles: query("SELECT * FROM orders WHERE id = ?", mapper, orderId)
-    lenient().when(jdbcTemplate.query(anyString(), 
-        any(org.springframework.jdbc.core.RowMapper.class), 
-        eq(sellOrder1.getId()))).thenReturn(List.of(sellOrder1));
-    lenient().when(jdbcTemplate.query(anyString(), 
-        any(org.springframework.jdbc.core.RowMapper.class), 
-        eq(sellOrder2.getId()))).thenReturn(List.of(sellOrder2));
+    // Mock getOrderById calls to return the current state of SELL orders
+    lenient().when(jdbcTemplate.queryForObject(
+        anyString(),
+        any(org.springframework.jdbc.core.RowMapper.class),
+        eq(sellOrder1.getId())
+    )).thenReturn(sellOrder1);
+    
+    lenient().when(jdbcTemplate.queryForObject(
+        anyString(),
+        any(org.springframework.jdbc.core.RowMapper.class),
+        eq(sellOrder2.getId())
+    )).thenReturn(sellOrder2);
     
     lenient().when(fillRepository.findByOrderId(sellOrder1.getId())).thenReturn(List.of());
     lenient().when(fillRepository.findByOrderId(sellOrder2.getId())).thenReturn(List.of());
@@ -1147,7 +1157,7 @@ class ExecutionServiceTest {
       return List.of(buyFill1, buyFill2); // BUY order's fills
     });
     
-    // Mock isCompletelyEmptyBook check - return > 0 (order book exists, not first order)
+    // Mock isOrderBookEmpty check - return > 0 (order book exists, not first order)
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(1);
 
@@ -1195,10 +1205,9 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
     
-    // Mock isCompletelyEmptyBook check - return > 0 (order book exists, not first order)
-    // This prevents bootstrapping
+    // Mock isOrderBookEmpty check - return > 0 (order book exists, not first order)
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
-        .thenReturn(1); // At least one order exists in system
+        .thenReturn(1); // At least one SELL order exists in system
     
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
