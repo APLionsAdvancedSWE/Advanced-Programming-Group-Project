@@ -21,6 +21,7 @@ import com.dev.tradingapi.model.Quote;
 import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -99,14 +100,15 @@ class OrderServiceTest {
     engineOrder.setFilledQty(100);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
         new BigDecimal("150.00"), Instant.now());
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
     // Act: Submit the order via OrderService
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     // Assert: Verify the order was created with correct properties
     assertNotNull(result);
@@ -128,57 +130,67 @@ class OrderServiceTest {
 
   /**
    * Test submitting a TWAP order successfully - typical valid case.
-   * Verifies that a TWAP order splits into multiple equal fills,
-   * distributing remainders evenly across the first slices.
+   * Verifies that a TWAP order creates multiple child orders.
    */
   @Test
   void testSubmit_TwapOrder_Success_TypicalCase() {
-    // Arrange: Create a SELL TWAP order for 105 shares (should split into slices)
+    // Arrange: Create a SELL TWAP order for 105 shares
+    // qty=105 -> numSlices=5, baseSliceQty=21, remainder=0 -> 5 child orders of 21 each
     CreateOrderRequest req = new CreateOrderRequest();
     req.setAccountId(UUID.randomUUID());
     req.setClientOrderId("client-twap-1");
     req.setSymbol("AMZN");
     req.setSide("SELL");
-    req.setQty(105); // Will split into slices with some getting extra share
+    req.setQty(105);
     req.setType("TWAP");
     req.setTimeInForce("DAY");
 
-    Order engineOrder = new Order();
-    engineOrder.setId(UUID.randomUUID());
-    engineOrder.setAccountId(req.getAccountId());
-    engineOrder.setSymbol("AMZN");
-    engineOrder.setSide("SELL");
-    engineOrder.setQty(105);
-    engineOrder.setType("TWAP");
-    engineOrder.setStatus("FILLED");
-    engineOrder.setFilledQty(105);
-    engineOrder.setAvgFillPrice(new BigDecimal("3200.50"));
-
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
-
-    // Simulate 3 TWAP fills whose total notional equals 105 * 3200.50
+    // Mock 5 child orders being returned
+    List<Order> childOrders = new ArrayList<>();
     BigDecimal price = new BigDecimal("3200.50");
-    Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
-    Fill f2 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
-    Fill f3 = new Fill(UUID.randomUUID(), engineOrder.getId(), 35, price, Instant.now());
-    when(fillRepository.findByOrderId(engineOrder.getId()))
-        .thenReturn(Arrays.asList(f1, f2, f3));
+    for (int i = 0; i < 5; i++) {
+      Order childOrder = new Order();
+      childOrder.setId(UUID.randomUUID());
+      childOrder.setAccountId(req.getAccountId());
+      childOrder.setClientOrderId("client-twap-1-TWAP-" + (i + 1));
+      childOrder.setSymbol("AMZN");
+      childOrder.setSide("SELL");
+      childOrder.setQty(21);
+      childOrder.setType("TWAP");
+      childOrder.setStatus("FILLED");
+      childOrder.setFilledQty(21);
+      childOrder.setAvgFillPrice(price);
+      childOrders.add(childOrder);
+      
+      // Mock fills for each child order
+      Fill fill = new Fill(UUID.randomUUID(), childOrder.getId(), 21, price, Instant.now());
+      when(fillRepository.findByOrderId(childOrder.getId()))
+          .thenReturn(Arrays.asList(fill));
+    }
+
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(childOrders);
 
     // Act: Submit the TWAP order
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
 
-    // Assert: Verify TWAP behavior (should create multiple fills up to 10 slices)
+    // Assert: Verify TWAP behavior - should return 5 child orders
+    assertNotNull(orders);
+    assertEquals(5, orders.size(), "TWAP order with qty=105 should create 5 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("AMZN", result.getSymbol());
     assertEquals("SELL", result.getSide());
-    assertEquals(105, result.getQty());
+    assertEquals(21, result.getQty()); // Each child order has qty=21
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
-    assertEquals(105, result.getFilledQty()); // All shares filled across slices
+    assertEquals(21, result.getFilledQty()); // Each child order filled completely
 
     // Verify delegation and cash adjustment for SELL side (cash credited)
+    // Cash is adjusted once for all fills from all child orders
     verify(executionService, times(1)).createOrder(req);
-    verify(fillRepository, times(1)).findByOrderId(engineOrder.getId());
+    // Verify fills were queried for all child orders (5 times)
+    verify(fillRepository, times(5)).findByOrderId(any(UUID.class));
     BigDecimal expectedNotional = price.multiply(new BigDecimal("105"));
     verify(accountService, times(1))
         .adjustCash(eq(req.getAccountId()), eq(expectedNotional));
@@ -242,14 +254,15 @@ class OrderServiceTest {
     engineOrder.setFilledQty(50);
     engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 50,
         new BigDecimal("140.00"), Instant.now());
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
     // Act: Submit order
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     // Assert: Order executed successfully
     assertNotNull(result);
@@ -498,11 +511,12 @@ class OrderServiceTest {
 
   /**
    * Test submitting small TWAP order - atypical valid case.
-   * For very small quantities, TWAP should create minimum 2 slices.
+   * For very small quantities, TWAP should create 1 slice.
    */
   @Test
   void testSubmit_SmallTwapOrder_CreateMinimumSlices() {
-    // Arrange: TWAP order with only 3 shares (should create 2-3 slices, not 1)
+    // Arrange: TWAP order with only 3 shares
+    // qty=3 -> numSlices=1, baseSliceQty=3, remainder=0 -> 1 child order of 3
     CreateOrderRequest req = new CreateOrderRequest();
     req.setAccountId(UUID.randomUUID());
     req.setSymbol("IBM");
@@ -521,9 +535,9 @@ class OrderServiceTest {
     engineOrder.setFilledQty(3);
     engineOrder.setAvgFillPrice(new BigDecimal("140.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
-    // Simulate 2 TWAP fills for a small order
+    // Simulate fills for the single child order
     BigDecimal price = new BigDecimal("140.00");
     Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 1, price, Instant.now());
     Fill f2 = new Fill(UUID.randomUUID(), engineOrder.getId(), 2, price, Instant.now());
@@ -531,9 +545,13 @@ class OrderServiceTest {
         .thenReturn(Arrays.asList(f1, f2));
 
     // Act: Submit small TWAP order
-    Order result = orderService.submit(req);
-
-    // Assert: Order filled completely despite small size
+    List<Order> orders = orderService.submit(req);
+    
+    // Assert: Should return 1 child order
+    assertNotNull(orders);
+    assertEquals(1, orders.size(), "TWAP order with qty=3 should create 1 child order");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("FILLED", result.getStatus());
     assertEquals(3, result.getFilledQty());
@@ -572,7 +590,7 @@ class OrderServiceTest {
     engineOrder.setFilledQty(10);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
     Fill f1 = new Fill(UUID.randomUUID(), engineOrder.getId(), 10,
         new BigDecimal("150.00"), Instant.now());
@@ -580,7 +598,8 @@ class OrderServiceTest {
         .thenReturn(Arrays.asList(f1));
 
     // Act: Write - submit order
-    Order created = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order created = orders.get(0);
 
     // Arrange read stubs based on created order id
     UUID orderId = created.getId();
@@ -664,8 +683,8 @@ class OrderServiceTest {
     engineOrderB.setFilledQty(7);
     engineOrderB.setAvgFillPrice(new BigDecimal("300"));
 
-    when(executionService.createOrder(a)).thenReturn(engineOrderA);
-    when(executionService.createOrder(b)).thenReturn(engineOrderB);
+    when(executionService.createOrder(a)).thenReturn(List.of(engineOrderA));
+    when(executionService.createOrder(b)).thenReturn(List.of(engineOrderB));
 
     when(fillRepository.findByOrderId(engineOrderA.getId()))
         .thenReturn(List.of(new Fill(UUID.randomUUID(), engineOrderA.getId(), 5,
@@ -712,10 +731,11 @@ class OrderServiceTest {
     engineOrder.setFilledQty(0);
     engineOrder.setAvgFillPrice(null);
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -753,13 +773,14 @@ class OrderServiceTest {
     engineOrder.setFilledQty(100);
     engineOrder.setAvgFillPrice(new BigDecimal("155.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
     Fill fill = new Fill(UUID.randomUUID(), engineOrder.getId(), 100,
         new BigDecimal("155.00"), Instant.now());
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of(fill));
 
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -802,10 +823,11 @@ class OrderServiceTest {
     engineOrder.setFilledQty(0);
     engineOrder.setAvgFillPrice(null);
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
     when(fillRepository.findByOrderId(engineOrder.getId())).thenReturn(List.of());
 
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -842,14 +864,15 @@ class OrderServiceTest {
     engineOrder.setFilledQty(200);
     engineOrder.setAvgFillPrice(new BigDecimal("150.00"));
 
-    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(engineOrder);
+    when(executionService.createOrder(any(CreateOrderRequest.class))).thenReturn(List.of(engineOrder));
 
     Fill partialFill = new Fill(UUID.randomUUID(), engineOrder.getId(), 200,
         new BigDecimal("150.00"), Instant.now());
     when(fillRepository.findByOrderId(engineOrder.getId()))
         .thenReturn(List.of(partialFill));
 
-    Order result = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());

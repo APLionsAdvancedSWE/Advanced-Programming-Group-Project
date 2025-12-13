@@ -15,6 +15,7 @@ import com.dev.tradingapi.model.Order;
 import com.dev.tradingapi.service.OrderService;
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
@@ -78,18 +79,20 @@ class OrderControllerTest {
     mockOrder.setAvgFillPrice(new BigDecimal("150.00"));
     mockOrder.setCreatedAt(Instant.now());
 
-    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(mockOrder);
+    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(List.of(mockOrder));
 
     // Act: Call the controller endpoint
-    ResponseEntity<Order> response = orderController.create(request);
+    ResponseEntity<List<Order>> response = orderController.create(request);
 
     // Assert: Verify response status and body
     assertNotNull(response);
     assertEquals(HttpStatus.CREATED, response.getStatusCode());
     assertNotNull(response.getBody());
-    assertEquals(orderId, response.getBody().getId());
-    assertEquals("FILLED", response.getBody().getStatus());
-    assertEquals(100, response.getBody().getFilledQty());
+    assertEquals(1, response.getBody().size());
+    Order order = response.getBody().get(0);
+    assertEquals(orderId, order.getId());
+    assertEquals("FILLED", order.getStatus());
+    assertEquals(100, order.getFilledQty());
 
     // Verify service was called exactly once
     verify(orderService, times(1)).submit(request);
@@ -97,11 +100,12 @@ class OrderControllerTest {
 
   /**
    * Test creating a TWAP order successfully - typical valid case.
-   * Verifies TWAP order type is properly handled.
+   * Verifies TWAP order type is properly handled and returns multiple child orders.
    */
   @Test
   void testCreate_TwapOrder_Success_TypicalCase() {
     // Arrange: Create a SELL TWAP order request
+    // qty=200 -> numSlices=5, baseSliceQty=40, remainder=0 -> 5 child orders of 40 each
     CreateOrderRequest request = new CreateOrderRequest();
     request.setAccountId(UUID.randomUUID());
     request.setClientOrderId("twap-order-1");
@@ -110,28 +114,44 @@ class OrderControllerTest {
     request.setQty(200);
     request.setType("TWAP");
 
-    // Mock service returning a filled TWAP order
-    Order mockOrder = new Order();
-    mockOrder.setId(UUID.randomUUID());
-    mockOrder.setAccountId(request.getAccountId());
-    mockOrder.setSymbol("AMZN");
-    mockOrder.setSide("SELL");
-    mockOrder.setQty(200);
-    mockOrder.setType("TWAP");
-    mockOrder.setStatus("FILLED");
-    mockOrder.setFilledQty(200);
-    mockOrder.setAvgFillPrice(new BigDecimal("3200.00"));
+    // Mock service returning multiple TWAP child orders
+    List<Order> mockChildOrders = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      Order childOrder = new Order();
+      childOrder.setId(UUID.randomUUID());
+      childOrder.setAccountId(request.getAccountId());
+      childOrder.setClientOrderId("twap-order-1-TWAP-" + (i + 1));
+      childOrder.setSymbol("AMZN");
+      childOrder.setSide("SELL");
+      childOrder.setQty(40);
+      childOrder.setType("TWAP");
+      childOrder.setStatus("FILLED");
+      childOrder.setFilledQty(40);
+      childOrder.setAvgFillPrice(new BigDecimal("3200.00"));
+      mockChildOrders.add(childOrder);
+    }
 
-    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(mockOrder);
+    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(mockChildOrders);
 
     // Act: Call the controller
-    ResponseEntity<Order> response = orderController.create(request);
+    ResponseEntity<List<Order>> response = orderController.create(request);
 
-    // Assert: Verify TWAP order created successfully
+    // Assert: Verify TWAP order created successfully with multiple child orders
     assertNotNull(response);
     assertEquals(HttpStatus.CREATED, response.getStatusCode());
-    assertEquals("TWAP", response.getBody().getType());
-    assertEquals("FILLED", response.getBody().getStatus());
+    assertNotNull(response.getBody());
+    assertEquals(5, response.getBody().size(), "TWAP order with qty=200 should create 5 child orders");
+    // Verify first child order
+    Order firstOrder = response.getBody().get(0);
+    assertEquals("TWAP", firstOrder.getType());
+    assertEquals("SELL", firstOrder.getSide());
+    assertEquals(40, firstOrder.getQty());
+    // Verify all orders have correct properties
+    for (Order order : response.getBody()) {
+      assertEquals("TWAP", order.getType());
+      assertEquals("AMZN", order.getSymbol());
+      assertEquals(request.getAccountId(), order.getAccountId());
+    }
 
     verify(orderService, times(1)).submit(request);
   }
@@ -424,15 +444,17 @@ class OrderControllerTest {
     mockOrder.setSymbol("TSLA");
     mockOrder.setStatus("FILLED");
 
-    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(mockOrder);
+    when(orderService.submit(any(CreateOrderRequest.class))).thenReturn(List.of(mockOrder));
 
     // Act: Create order
-    ResponseEntity<Order> response = orderController.create(request);
+    ResponseEntity<List<Order>> response = orderController.create(request);
 
     // Assert: Order created successfully with minimal fields
     assertNotNull(response);
     assertEquals(HttpStatus.CREATED, response.getStatusCode());
-    assertEquals("TSLA", response.getBody().getSymbol());
+    assertNotNull(response.getBody());
+    assertEquals(1, response.getBody().size());
+    assertEquals("TSLA", response.getBody().get(0).getSymbol());
 
     verify(orderService, times(1)).submit(request);
   }

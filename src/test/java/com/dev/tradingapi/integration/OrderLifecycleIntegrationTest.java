@@ -70,7 +70,8 @@ class OrderLifecycleIntegrationTest {
     req.setType("MARKET");
     req.setTimeInForce("DAY");
 
-    Order order = orderService.submit(req);
+    List<Order> orders = orderService.submit(req);
+    Order order = orders.get(0);
 
     assertNotNull(order);
     assertEquals("IBM", order.getSymbol());
@@ -134,7 +135,8 @@ class OrderLifecycleIntegrationTest {
     restingSellReq.setType("LIMIT");
     restingSellReq.setLimitPrice(new java.math.BigDecimal("100.00"));
     restingSellReq.setTimeInForce("DAY");
-    Order restingSell = orderService.submit(restingSellReq);
+    List<Order> restingSellOrders = orderService.submit(restingSellReq);
+    Order restingSell = restingSellOrders.get(0);
     assertEquals("WORKING", restingSell.getStatus());
 
     // Incoming BUY LIMIT @ 101 should match that resting SELL
@@ -148,7 +150,8 @@ class OrderLifecycleIntegrationTest {
     buyReq.setLimitPrice(new java.math.BigDecimal("101.00"));
     buyReq.setTimeInForce("DAY");
 
-    Order buyOrder = orderService.submit(buyReq);
+    List<Order> buyOrders = orderService.submit(buyReq);
+    Order buyOrder = buyOrders.get(0);
     assertEquals("FILLED", buyOrder.getStatus());
     assertEquals(100, buyOrder.getFilledQty());
 
@@ -248,7 +251,8 @@ class OrderLifecycleIntegrationTest {
     twapReq.setType("TWAP");
     twapReq.setTimeInForce("DAY");
 
-    Order twapOrder = orderService.submit(twapReq);
+    List<Order> twapOrders = orderService.submit(twapReq);
+    Order twapOrder = twapOrders.get(0);
     // With matching orders, TWAP should fill completely
     assertEquals("FILLED", twapOrder.getStatus());
     assertEquals(25, twapOrder.getFilledQty());

@@ -44,14 +44,14 @@ public class OrderController {
    * chunks).
    *
    * @param req JSON payload describing the order to create
-   * @return the created order with status and fill aggregates
+   * @return list of created orders (single order for non-TWAP, child orders for TWAP)
    */
   @PostMapping
-  public ResponseEntity<Order> create(@RequestBody CreateOrderRequest req) {
+  public ResponseEntity<List<Order>> create(@RequestBody CreateOrderRequest req) {
     // Delegate to service to validate risk, get market data, persist, and generate
     // fills
-    Order order = orderService.submit(req);
-    return new ResponseEntity<>(order, HttpStatus.CREATED);
+    List<Order> orders = orderService.submit(req);
+    return new ResponseEntity<>(orders, HttpStatus.CREATED);
   }
 
   /**
