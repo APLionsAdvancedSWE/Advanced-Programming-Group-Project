@@ -316,29 +316,28 @@ public class ExecutionService {
     
     if ("BUY".equalsIgnoreCase(incomingOrder.getSide())) {
       if (!isPriceProtected) {
+        // MARKET BUY or unpriced match: consider all eligible SELL orders
+        // (LIMIT and MARKET) with remaining quantity.
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'SELL' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
-                + "AND limit_price IS NOT NULL "
                 + "AND (qty - filled_qty) > 0 "
-                + "AND (qty - filled_qty) > 0 "
-                + "ORDER BY limit_price ASC, created_at ASC",
+                + "ORDER BY limit_price ASC NULLS LAST, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
         );
       } else {
+        // Price-protected BUY: only consider SELL orders at or below matchingPrice.
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'SELL' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
-                + "AND limit_price IS NOT NULL "
-                + "AND limit_price <= ? "
                 + "AND (qty - filled_qty) > 0 "
-                + "AND (qty - filled_qty) > 0 "
-                + "ORDER BY limit_price ASC, created_at ASC",
+                + "AND (limit_price IS NULL OR limit_price <= ?) "
+                + "ORDER BY limit_price ASC NULLS LAST, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol(),
             matchingPrice
@@ -346,29 +345,28 @@ public class ExecutionService {
       }
     } else {
       if (!isPriceProtected) {
+        // MARKET SELL or unpriced match: consider all eligible BUY orders
+        // (LIMIT and MARKET) with remaining quantity.
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'BUY' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
-                + "AND limit_price IS NOT NULL "
                 + "AND (qty - filled_qty) > 0 "
-                + "AND (qty - filled_qty) > 0 "
-                + "ORDER BY limit_price DESC, created_at ASC",
+                + "ORDER BY limit_price DESC NULLS LAST, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol()
         );
       } else {
+        // Price-protected SELL: only consider BUY orders at or above matchingPrice.
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
                 + "AND side = 'BUY' "
                 + "AND status IN ('NEW', 'WORKING', 'PARTIALLY_FILLED') "
-                + "AND limit_price IS NOT NULL "
-                + "AND limit_price >= ? "
                 + "AND (qty - filled_qty) > 0 "
-                + "AND (qty - filled_qty) > 0 "
-                + "ORDER BY limit_price DESC, created_at ASC",
+                + "AND (limit_price IS NULL OR limit_price >= ?) "
+                + "ORDER BY limit_price DESC NULLS LAST, created_at ASC",
             new OrderMapper(),
             incomingOrder.getSymbol(),
             matchingPrice
