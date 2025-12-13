@@ -506,17 +506,13 @@ public class ExecutionService {
     order.setFilledQty(totalFilled);
 
     // Status determination:
-    // - LIMIT and TWAP orders can remain WORKING with no fills.
-    // - MARKET orders are IOC-style: if they receive no fills, they are CANCELLED
-    //   rather than resting in the book.
+    // With a pure order book, orders of all types (MARKET, LIMIT, TWAP)
+    // can remain WORKING with zero fills. They rest in the book until
+    // they either receive fills (PARTIALLY_FILLED / FILLED) or are
+    // cancelled explicitly via another path.
     if (totalFilled == 0) {
-      if ("MARKET".equalsIgnoreCase(order.getType())) {
-        order.setStatus("CANCELLED");
-        order.setAvgFillPrice(null);
-      } else {
-        order.setStatus("WORKING");
-        order.setAvgFillPrice(null);
-      }
+      order.setStatus("WORKING");
+      order.setAvgFillPrice(null);
     } else if (totalFilled < order.getQty()) {
       order.setStatus("PARTIALLY_FILLED");
       recalculateAverageFillPrice(order);

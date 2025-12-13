@@ -74,9 +74,9 @@ class TradingApiHttpIntegrationTest {
     assertNotNull(createOrderResp.getBody());
     Order createdOrder = createOrderResp.getBody();
     assertEquals("IBM", createdOrder.getSymbol());
-    // With the pure-book engine and IOC-style MARKET behavior,
-    // the first MARKET BUY with no opposing orders is CANCELLED.
-    assertEquals("CANCELLED", createdOrder.getStatus());
+    // With the book-based engine and no opposing orders, the
+    // first MARKET BUY will rest WORKING with zero fills.
+    assertEquals("WORKING", createdOrder.getStatus());
 
     // 3) Fetch the order back via GET /orders/{id}
     ResponseEntity<Order> getOrderResp = restTemplate.exchange(

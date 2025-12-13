@@ -65,9 +65,9 @@ class OrderLifecycleIntegrationTest {
 
     assertNotNull(order);
     assertEquals("IBM", order.getSymbol());
-    // Pure order book with IOC-style MARKET: first BUY MARKET
-    // with no opposing liquidity is immediately CANCELLED with 0 fills.
-    assertEquals("CANCELLED", order.getStatus());
+    // With a pure order-book engine and no opposing SELL orders,
+    // a first BUY MARKET order will rest WORKING with 0 fills.
+    assertEquals("WORKING", order.getStatus());
     assertEquals(0, order.getFilledQty());
 
     // Verify order row persisted
