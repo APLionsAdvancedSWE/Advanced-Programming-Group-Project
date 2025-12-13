@@ -82,6 +82,6 @@ class AccountServiceTest {
     assertEquals(3, updated.getMaxPositionQty());
 
     Mockito.verify(accountRepository)
-      .updateRiskLimits(id, 2, BigDecimal.valueOf(100), 3);
+        .updateRiskLimits(id, 2, BigDecimal.valueOf(100), 3);
   }
 }

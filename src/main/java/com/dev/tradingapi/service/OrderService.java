@@ -51,9 +51,9 @@ public class OrderService {
    * @param fillRepository repository for fill operations
    * @param accountService service managing account balances
    */
-    public OrderService(JdbcTemplate jdbcTemplate, MarketService marketService,
-      RiskService riskService, FillRepository fillRepository,
-      AccountService accountService) {
+  public OrderService(JdbcTemplate jdbcTemplate, MarketService marketService,
+                      RiskService riskService, FillRepository fillRepository,
+                      AccountService accountService) {
     this.jdbcTemplate = jdbcTemplate;
     this.marketService = marketService;
     this.riskService = riskService;
