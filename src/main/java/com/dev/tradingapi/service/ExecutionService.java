@@ -138,6 +138,10 @@ public class ExecutionService {
     if ("TWAP".equalsIgnoreCase(req.getType())) {
       List<Order> childOrders = createTwapChildOrders(req);
       for (Order childOrder : childOrders) {
+        // Skip execution for cancelled orders (e.g., insufficient position for SELL orders)
+        if ("CANCELLED".equals(childOrder.getStatus())) {
+          continue;
+        }
         Quote freshQuote = marketService.getQuote(childOrder.getSymbol());
         List<Fill> fills = generateFills(childOrder, freshQuote);
         updatePositions(childOrder, fills);
@@ -147,22 +151,22 @@ public class ExecutionService {
     }
 
     Order order = createAndPersistOrder(
-      req.getAccountId(),
-      req.getClientOrderId(),
-      req.getSymbol(),
-      req.getSide(),
-      req.getQty(),
-      req.getType(),
-      req.getLimitPrice(),
-      req.getTimeInForce(),
-      Instant.now()
+        req.getAccountId(),
+        req.getClientOrderId(),
+        req.getSymbol(),
+        req.getSide(),
+        req.getQty(),
+        req.getType(),
+        req.getLimitPrice(),
+        req.getTimeInForce(),
+        Instant.now()
     );
   
-
-    List<Fill> fills = generateFills(order, mark);
-    updatePositions(order, fills);
-    updateOrderStatus(order);
-
+    if (!("CANCELLED".equals(order.getStatus()))) {
+      List<Fill> fills = generateFills(order, mark);
+      updatePositions(order, fills);
+      updateOrderStatus(order);
+    } 
     return List.of(order);
   }
 
@@ -177,82 +181,82 @@ public class ExecutionService {
       BigDecimal marketPrice,
       Instant now,
       List<Fill> fills
-    ) {
-  int remainingQty = maxQty;
+  ) {
+    int remainingQty = maxQty;
 
-  List<Order> matchingOrders = findMatchingOrders(incomingOrder, matchingPrice);
+    List<Order> matchingOrders = findMatchingOrders(incomingOrder, matchingPrice);
 
-  for (Order restingOrder : matchingOrders) {
-    if (remainingQty <= 0) {
-      break;
-    }
+    for (Order restingOrder : matchingOrders) {
+      if (remainingQty <= 0) {
+        break;
+      }
 
-    Order currentRestingOrder = getOrderById(restingOrder.getId());
-    if (currentRestingOrder == null) {
-      continue;
-    }
-
-    if ("FILLED".equals(currentRestingOrder.getStatus())
-        || "CANCELLED".equals(currentRestingOrder.getStatus())) {
-      continue;
-    }
-
-    int restingRemaining =
-        currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
-    if (restingRemaining <= 0) {
-      continue;
-    }
-
-    int fillQty = Math.min(remainingQty, restingRemaining);
-
-    BigDecimal executionPrice =
-        currentRestingOrder.getLimitPrice() != null
-            ? currentRestingOrder.getLimitPrice()
-            : marketPrice;
-
-    // Price protection (LIMIT only)
-    if (matchingPrice != null) {
-      if ("BUY".equalsIgnoreCase(incomingOrder.getSide())
-          && executionPrice.compareTo(matchingPrice) > 0) {
+      Order currentRestingOrder = getOrderById(restingOrder.getId());
+      if (currentRestingOrder == null) {
         continue;
       }
-      if ("SELL".equalsIgnoreCase(incomingOrder.getSide())
-          && executionPrice.compareTo(matchingPrice) < 0) {
+
+      if ("FILLED".equals(currentRestingOrder.getStatus())
+          || "CANCELLED".equals(currentRestingOrder.getStatus())) {
         continue;
       }
+
+      int restingRemaining =
+          currentRestingOrder.getQty() - currentRestingOrder.getFilledQty();
+      if (restingRemaining <= 0) {
+        continue;
+      }
+
+      int fillQty = Math.min(remainingQty, restingRemaining);
+
+      BigDecimal executionPrice =
+          currentRestingOrder.getLimitPrice() != null
+              ? currentRestingOrder.getLimitPrice()
+              : marketPrice;
+
+      // Price protection (LIMIT only)
+      if (matchingPrice != null) {
+        if ("BUY".equalsIgnoreCase(incomingOrder.getSide())
+            && executionPrice.compareTo(matchingPrice) > 0) {
+          continue;
+        }
+        if ("SELL".equalsIgnoreCase(incomingOrder.getSide())
+            && executionPrice.compareTo(matchingPrice) < 0) {
+          continue;
+        }
+      }
+
+      // Incoming fill
+      Fill incomingFill = new Fill(
+          UUID.randomUUID(),
+          incomingOrder.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
+      fills.add(incomingFill);
+      fillRepository.save(incomingFill);
+
+      // Resting fill
+      Fill restingFill = new Fill(
+          UUID.randomUUID(),
+          currentRestingOrder.getId(),
+          fillQty,
+          executionPrice,
+          now
+      );
+      fillRepository.save(restingFill);
+
+      currentRestingOrder.setFilledQty(
+          currentRestingOrder.getFilledQty() + fillQty
+      );
+      updateRestingOrderStatus(currentRestingOrder);
+      updatePositionsForFill(currentRestingOrder, restingFill);
+
+      remainingQty -= fillQty;
     }
 
-    // Incoming fill
-    Fill incomingFill = new Fill(
-        UUID.randomUUID(),
-        incomingOrder.getId(),
-        fillQty,
-        executionPrice,
-        now
-    );
-    fills.add(incomingFill);
-    fillRepository.save(incomingFill);
-
-    // Resting fill
-    Fill restingFill = new Fill(
-        UUID.randomUUID(),
-        currentRestingOrder.getId(),
-        fillQty,
-        executionPrice,
-        now
-    );
-    fillRepository.save(restingFill);
-
-    currentRestingOrder.setFilledQty(
-        currentRestingOrder.getFilledQty() + fillQty
-    );
-    updateRestingOrderStatus(currentRestingOrder);
-    updatePositionsForFill(currentRestingOrder, restingFill);
-
-    remainingQty -= fillQty;
-  }
-
-  return remainingQty;
+    return remainingQty;
   }
 
   private List<Order> createTwapChildOrders(CreateOrderRequest req) {
@@ -280,15 +284,15 @@ public class ExecutionService {
       }
   
       Order childOrder = createAndPersistOrder(
-        req.getAccountId(),
-        req.getClientOrderId() + "-TWAP-" + (i + 1),
-        req.getSymbol(),
-        req.getSide(),
-        sliceQty,
-        "TWAP",         
-        null,
-        req.getTimeInForce(),
-        Instant.now().plusSeconds(i)
+          req.getAccountId(),
+          req.getClientOrderId() + "-TWAP-" + (i + 1),
+          req.getSymbol(),
+          req.getSide(),
+          sliceQty,
+          "TWAP",         
+          null,
+          req.getTimeInForce(),
+          Instant.now().plusSeconds(i)
       );
       childOrders.add(childOrder);
     }

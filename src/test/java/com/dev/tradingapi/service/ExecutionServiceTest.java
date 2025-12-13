@@ -263,23 +263,23 @@ class ExecutionServiceTest {
     // qty=100 -> numSlices=5, baseSliceQty=20, remainder=0 -> 5 slices of 20 each
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenAnswer(invocation -> {
-      List<Order> freshOrders = new ArrayList<>();
-      for (int i = 0; i < 5; i++) {
-        Order sellOrder = new Order();
-        sellOrder.setId(UUID.randomUUID());
-        sellOrder.setAccountId(UUID.randomUUID());
-        sellOrder.setSymbol("AAPL");
-        sellOrder.setSide("SELL");
-        sellOrder.setQty(20);
-        sellOrder.setFilledQty(0);
-        sellOrder.setType("MARKET");
-        sellOrder.setLimitPrice(null);
-        sellOrder.setStatus("WORKING");
-        sellOrder.setCreatedAt(Instant.now());
-        freshOrders.add(sellOrder);
-      }
-      return freshOrders;
-    });
+          List<Order> freshOrders = new ArrayList<>();
+          for (int i = 0; i < 5; i++) {
+            Order sellOrder = new Order();
+            sellOrder.setId(UUID.randomUUID());
+            sellOrder.setAccountId(UUID.randomUUID());
+            sellOrder.setSymbol("AAPL");
+            sellOrder.setSide("SELL");
+            sellOrder.setQty(20);
+            sellOrder.setFilledQty(0);
+            sellOrder.setType("MARKET");
+            sellOrder.setLimitPrice(null);
+            sellOrder.setStatus("WORKING");
+            sellOrder.setCreatedAt(Instant.now());
+            freshOrders.add(sellOrder);
+          }
+          return freshOrders;
+        });
     lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenAnswer(invocation -> {
@@ -328,7 +328,8 @@ class ExecutionServiceTest {
     // TWAP should use market price (152.00), not limit price
     assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice());
     // TWAP creates multiple fills (slices) - verify it's reasonable (5 slices)
-    verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class)); // 5 incoming + 5 resting
+    // 5 incoming + 5 resting
+    verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
     // getQuote is called once for parent validation + once per child order (5) = 6 times
     verify(marketService, times(6)).getQuote("AAPL");
@@ -452,23 +453,23 @@ class ExecutionServiceTest {
     // qty=50 -> numSlices=2, baseSliceQty=25, remainder=0 -> 2 slices of 25 each
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenAnswer(invocation -> {
-      List<Order> freshOrders = new ArrayList<>();
-      for (int i = 0; i < 2; i++) {
-        Order sellOrder = new Order();
-        sellOrder.setId(UUID.randomUUID());
-        sellOrder.setAccountId(UUID.randomUUID());
-        sellOrder.setSymbol("AAPL");
-        sellOrder.setSide("SELL");
-        sellOrder.setQty(25);
-        sellOrder.setFilledQty(0);
-        sellOrder.setType("MARKET");
-        sellOrder.setLimitPrice(null);
-        sellOrder.setStatus("WORKING");
-        sellOrder.setCreatedAt(Instant.now());
-        freshOrders.add(sellOrder);
-      }
-      return freshOrders;
-    });
+          List<Order> freshOrders = new ArrayList<>();
+          for (int i = 0; i < 2; i++) {
+            Order sellOrder = new Order();
+            sellOrder.setId(UUID.randomUUID());
+            sellOrder.setAccountId(UUID.randomUUID());
+            sellOrder.setSymbol("AAPL");
+            sellOrder.setSide("SELL");
+            sellOrder.setQty(25);
+            sellOrder.setFilledQty(0);
+            sellOrder.setType("MARKET");
+            sellOrder.setLimitPrice(null);
+            sellOrder.setStatus("WORKING");
+            sellOrder.setCreatedAt(Instant.now());
+            freshOrders.add(sellOrder);
+          }
+          return freshOrders;
+        });
     lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenAnswer(invocation -> {
@@ -514,7 +515,8 @@ class ExecutionServiceTest {
     assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice());
     // TWAP creates fills - verify reasonable count (2 slices)
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(fillRepository, atMost(4)).save(any(com.dev.tradingapi.model.Fill.class)); // 2 incoming + 2 resting
+    // 2 incoming + 2 resting
+    verify(fillRepository, atMost(4)).save(any(com.dev.tradingapi.model.Fill.class));
     // getQuote is called once for parent validation + once per child order (2) = 3 times
     verify(marketService, times(3)).getQuote("AAPL");
   }
@@ -546,21 +548,21 @@ class ExecutionServiceTest {
     // qty=10 -> numSlices=1, baseSliceQty=10, remainder=0 -> 1 slice of 10
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenAnswer(invocation -> {
-      List<Order> freshOrders = new ArrayList<>();
-      Order sellOrder = new Order();
-      sellOrder.setId(UUID.randomUUID());
-      sellOrder.setAccountId(UUID.randomUUID());
-      sellOrder.setSymbol("AAPL");
-      sellOrder.setSide("SELL");
-      sellOrder.setQty(10);
-      sellOrder.setFilledQty(0);
-      sellOrder.setType("MARKET");
-      sellOrder.setLimitPrice(null);
-      sellOrder.setStatus("WORKING");
-      sellOrder.setCreatedAt(Instant.now());
-      freshOrders.add(sellOrder);
-      return freshOrders;
-    });
+          final List<Order> freshOrders = new ArrayList<>();
+          Order sellOrder = new Order();
+          sellOrder.setId(UUID.randomUUID());
+          sellOrder.setAccountId(UUID.randomUUID());
+          sellOrder.setSymbol("AAPL");
+          sellOrder.setSide("SELL");
+          sellOrder.setQty(10);
+          sellOrder.setFilledQty(0);
+          sellOrder.setType("MARKET");
+          sellOrder.setLimitPrice(null);
+          sellOrder.setStatus("WORKING");
+          sellOrder.setCreatedAt(Instant.now());
+          freshOrders.add(sellOrder);
+          return freshOrders;
+        });
     lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenAnswer(invocation -> {
@@ -637,23 +639,23 @@ class ExecutionServiceTest {
     // Create a factory to return fresh orders for each slice
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenAnswer(invocation -> {
-      List<Order> freshOrders = new ArrayList<>();
-      for (int i = 0; i < 10; i++) {
-        Order sellOrder = new Order();
-        sellOrder.setId(UUID.randomUUID());
-        sellOrder.setAccountId(UUID.randomUUID());
-        sellOrder.setSymbol("AAPL");
-        sellOrder.setSide("SELL");
-        sellOrder.setQty(100);
-        sellOrder.setFilledQty(0);
-        sellOrder.setType("MARKET");
-        sellOrder.setLimitPrice(null);
-        sellOrder.setStatus("WORKING");
-        sellOrder.setCreatedAt(Instant.now());
-        freshOrders.add(sellOrder);
-      }
-      return freshOrders;
-    });
+          List<Order> freshOrders = new ArrayList<>();
+          for (int i = 0; i < 10; i++) {
+            Order sellOrder = new Order();
+            sellOrder.setId(UUID.randomUUID());
+            sellOrder.setAccountId(UUID.randomUUID());
+            sellOrder.setSymbol("AAPL");
+            sellOrder.setSide("SELL");
+            sellOrder.setQty(100);
+            sellOrder.setFilledQty(0);
+            sellOrder.setType("MARKET");
+            sellOrder.setLimitPrice(null);
+            sellOrder.setStatus("WORKING");
+            sellOrder.setCreatedAt(Instant.now());
+            freshOrders.add(sellOrder);
+          }
+          return freshOrders;
+        });
     lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenAnswer(invocation -> {
@@ -699,7 +701,8 @@ class ExecutionServiceTest {
     assertEquals("FILLED", result.getStatus());
     assertEquals(100, result.getFilledQty()); // Each child order has qty=100
     assertEquals(100, result.getQty());
-    // Should create exactly 10 slices (capped at 10), each of 100 shares - 10 incoming + 10 resting fills
+    // Should create exactly 10 slices (capped at 10), each of 100 shares
+    // - 10 incoming + 10 resting fills
     verify(fillRepository, times(20)).save(any(com.dev.tradingapi.model.Fill.class));
     // getQuote is called once for parent validation + once per child order (10) = 11 times
     verify(marketService, times(11)).getQuote("AAPL");
@@ -732,23 +735,23 @@ class ExecutionServiceTest {
     // qty=105 -> numSlices=5, baseSliceQty=21, remainder=0 -> 5 slices of 21 each
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenAnswer(invocation -> {
-      List<Order> freshOrders = new ArrayList<>();
-      for (int i = 0; i < 5; i++) {
-        Order sellOrder = new Order();
-        sellOrder.setId(UUID.randomUUID());
-        sellOrder.setAccountId(UUID.randomUUID());
-        sellOrder.setSymbol("AAPL");
-        sellOrder.setSide("SELL");
-        sellOrder.setQty(21);
-        sellOrder.setFilledQty(0);
-        sellOrder.setType("MARKET");
-        sellOrder.setLimitPrice(null);
-        sellOrder.setStatus("WORKING");
-        sellOrder.setCreatedAt(Instant.now());
-        freshOrders.add(sellOrder);
-      }
-      return freshOrders;
-    });
+          List<Order> freshOrders = new ArrayList<>();
+          for (int i = 0; i < 5; i++) {
+            Order sellOrder = new Order();
+            sellOrder.setId(UUID.randomUUID());
+            sellOrder.setAccountId(UUID.randomUUID());
+            sellOrder.setSymbol("AAPL");
+            sellOrder.setSide("SELL");
+            sellOrder.setQty(21);
+            sellOrder.setFilledQty(0);
+            sellOrder.setType("MARKET");
+            sellOrder.setLimitPrice(null);
+            sellOrder.setStatus("WORKING");
+            sellOrder.setCreatedAt(Instant.now());
+            freshOrders.add(sellOrder);
+          }
+          return freshOrders;
+        });
     lenient().when(jdbcTemplate.queryForObject(anyString(), 
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenAnswer(invocation -> {
