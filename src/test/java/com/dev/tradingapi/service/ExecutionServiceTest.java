@@ -1284,6 +1284,7 @@ class ExecutionServiceTest {
         anyString(),
         any(org.springframework.jdbc.core.RowMapper.class),
         eq("AAPL"), // Symbol
+        any(UUID.class), // Account ID
         any(BigDecimal.class) // Limit price
     )).thenReturn(List.of(sellOrder1, sellOrder2));
     

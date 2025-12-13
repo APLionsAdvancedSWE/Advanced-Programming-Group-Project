@@ -345,6 +345,8 @@ public class ExecutionService {
   private List<Order> findMatchingOrders(Order incomingOrder, BigDecimal matchingPrice) {
     boolean isPriceProtected = matchingPrice != null;
   
+    // MARKET BUY or unpriced match: consider all eligible SELL orders 
+    // (LIMIT and MARKET) with remaining quantity.
     if ("BUY".equalsIgnoreCase(incomingOrder.getSide())) {
       if (!isPriceProtected) {
         return jdbcTemplate.query(
@@ -360,6 +362,7 @@ public class ExecutionService {
             incomingOrder.getAccountId()
         );
       } else {
+        // Price-protected BUY: only consider SELL orders at or below matchingPrice
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
@@ -377,6 +380,8 @@ public class ExecutionService {
       }
     } else {
       if (!isPriceProtected) {
+        // MARKET SELL or unpriced match: consider all eligible BUY orders 
+        //  (LIMIT and MARKET) with remaining quantity.
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
@@ -390,6 +395,7 @@ public class ExecutionService {
             incomingOrder.getAccountId()
         );
       } else {
+        // Price-protected SELL: only consider BUY orders at or above
         return jdbcTemplate.query(
             "SELECT * FROM orders "
                 + "WHERE symbol = ? "
