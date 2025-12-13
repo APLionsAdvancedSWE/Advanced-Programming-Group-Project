@@ -36,13 +36,13 @@ class OrderLifecycleIntegrationTest {
   @Autowired
   private JdbcTemplate jdbcTemplate;
 
-    @BeforeEach
-    void clearOrderBook() {
-        // Ensure each test starts with a clean order book so that
-        // demo data or previous tests do not affect matching.
-        jdbcTemplate.update("DELETE FROM fills");
-        jdbcTemplate.update("DELETE FROM orders");
-    }
+  @BeforeEach
+  void clearOrderBook() {
+    // Ensure each test starts with a clean order book so that
+    // demo data or previous tests do not affect matching.
+    jdbcTemplate.update("DELETE FROM fills");
+    jdbcTemplate.update("DELETE FROM orders");
+  }
 
   @Test
   void submitMarketOrder_persistsOrderFillsAndPositions() {
