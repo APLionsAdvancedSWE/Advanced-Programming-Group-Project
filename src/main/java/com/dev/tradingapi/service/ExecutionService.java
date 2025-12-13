@@ -48,17 +48,74 @@ public class ExecutionService {
     this.fillRepository = fillRepository;
   }
 
+  private Order createAndPersistOrder(
+      UUID accountId,
+      String clientOrderId,
+      String symbol,
+      String side,
+      int qty,
+      String type,
+      BigDecimal limitPrice,
+      String timeInForce,
+      Instant createdAt
+  ) {
+    Order order = new Order();
+    order.setId(UUID.randomUUID());
+    order.setAccountId(accountId);
+    order.setClientOrderId(clientOrderId);
+    order.setSymbol(symbol);
+    order.setSide(side);
+    order.setQty(qty);
+    order.setType(type);
+    order.setLimitPrice(
+        "MARKET".equalsIgnoreCase(type) || "TWAP".equalsIgnoreCase(type)
+            ? null
+            : limitPrice
+    );
+    order.setTimeInForce(timeInForce);
+    order.setStatus("NEW");
+    order.setFilledQty(0);
+    order.setAvgFillPrice(BigDecimal.ZERO);
+    order.setCreatedAt(createdAt);
+
+    // Reject zero-quantity orders
+    if (qty == 0) {
+      order.setStatus("CANCELLED");
+      saveOrder(order);
+      return order;
+    }
+
+    // SELL-side risk check
+    if ("SELL".equalsIgnoreCase(side)) {
+      Position position = getPosition(accountId, symbol);
+      int positionQty = position != null ? position.getQty() : 0;
+
+      int openSellExposure = getOpenSellExposure(accountId, symbol);
+      int availableToSell = positionQty - openSellExposure;
+
+      if (availableToSell < qty) {
+        order.setStatus("CANCELLED");
+        saveOrder(order);
+        return order;
+      }
+    }
+
+    saveOrder(order);
+    return order;
+  }
+
+
   /**
    * Creates and executes an order with fills and position updates.
    *
    * <p>Dependencies: MarketService.getQuote(), RiskService.validate()
    *
    * @param req order creation request
-   * @return created Order with FILLED status
+   * @return list of created Orders (single order for non-TWAP, child orders for TWAP)
    * @throws NotFoundException if market data unavailable
    * @throws RiskException if order violates risk limits
    */
-  public Order createOrder(CreateOrderRequest req) {
+  public List<Order> createOrder(CreateOrderRequest req) {
     Quote mark = marketService.getQuote(req.getSymbol());
     if (mark == null) {
       throw new NotFoundException("Market data not available for symbol: " + req.getSymbol());
@@ -77,54 +134,36 @@ public class ExecutionService {
       throw new IllegalArgumentException("LIMIT orders must specify a limitPrice");
     }
 
-    Order order = new Order();
-    order.setId(UUID.randomUUID());
-    order.setAccountId(req.getAccountId());
-    order.setClientOrderId(req.getClientOrderId());
-    order.setSymbol(req.getSymbol());
-    order.setSide(req.getSide());
-    order.setQty(req.getQty());
-    order.setType(req.getType());
-    // MARKET orders: set limitPrice to null (ignore any provided value)
-    // LIMIT orders: use the provided limitPrice
-    order.setLimitPrice("MARKET".equalsIgnoreCase(req.getType()) ? null : req.getLimitPrice());
-    order.setTimeInForce(req.getTimeInForce());
-    order.setStatus("NEW");
-    order.setFilledQty(0);
-    order.setAvgFillPrice(BigDecimal.ZERO);
-    order.setCreatedAt(Instant.now());
-
-    // Reject zero-quantity orders up front (persist as CANCELLED for auditability).
-    if (order.getQty() == 0) {
-      order.setStatus("CANCELLED");
-      saveOrder(order);
-      return order;
-    }
-
-    // SELL-side holdings check: prevent over-selling beyond current position
-    // including any existing open SELL orders for this account+symbol.
-    if ("SELL".equalsIgnoreCase(order.getSide())) {
-      Position position = getPosition(order.getAccountId(), order.getSymbol());
-      int positionQty = (position != null) ? position.getQty() : 0;
-
-      int openSellExposure = getOpenSellExposure(order.getAccountId(), order.getSymbol());
-      int availableToSell = positionQty - openSellExposure;
-
-      if (availableToSell < order.getQty()) {
-        order.setStatus("CANCELLED");
-        saveOrder(order);
-        return order;
+    // TWAP handled separately
+    if ("TWAP".equalsIgnoreCase(req.getType())) {
+      List<Order> childOrders = createTwapChildOrders(req);
+      for (Order childOrder : childOrders) {
+        Quote freshQuote = marketService.getQuote(childOrder.getSymbol());
+        List<Fill> fills = generateFills(childOrder, freshQuote);
+        updatePositions(childOrder, fills);
+        updateOrderStatus(childOrder);
       }
+      return childOrders;
     }
 
-    // Persist the live order in the book before matching.
-    saveOrder(order);
+    Order order = createAndPersistOrder(
+      req.getAccountId(),
+      req.getClientOrderId(),
+      req.getSymbol(),
+      req.getSide(),
+      req.getQty(),
+      req.getType(),
+      req.getLimitPrice(),
+      req.getTimeInForce(),
+      Instant.now()
+    );
+  
 
     List<Fill> fills = generateFills(order, mark);
     updatePositions(order, fills);
     updateOrderStatus(order);
 
-    return order;
+    return List.of(order);
   }
 
   /**
@@ -216,6 +255,47 @@ public class ExecutionService {
   return remainingQty;
   }
 
+  private List<Order> createTwapChildOrders(CreateOrderRequest req) {
+    List<Order> childOrders = new ArrayList<>();
+    int totalQty = req.getQty();
+  
+    int numSlices;
+    if (totalQty >= 1000) {
+      numSlices = 10;
+    } else if (totalQty >= 100) {
+      numSlices = 5;
+    } else if (totalQty >= 50) {
+      numSlices = 2;
+    } else {
+      numSlices = 1;
+    }
+  
+    int baseQty = totalQty / numSlices;
+    int remainder = totalQty % numSlices;
+  
+    for (int i = 0; i < numSlices; i++) {
+      int sliceQty = baseQty + (i < remainder ? 1 : 0);
+      if (sliceQty <= 0) {
+        continue;
+      }
+  
+      Order childOrder = createAndPersistOrder(
+        req.getAccountId(),
+        req.getClientOrderId() + "-TWAP-" + (i + 1),
+        req.getSymbol(),
+        req.getSide(),
+        sliceQty,
+        "TWAP",         
+        null,
+        req.getTimeInForce(),
+        Instant.now().plusSeconds(i)
+      );
+      childOrders.add(childOrder);
+    }
+    return childOrders;
+  }
+  
+
 
   /**
    * Generates fills for an order by matching against existing orders in the order book.
@@ -240,9 +320,7 @@ public class ExecutionService {
     BigDecimal marketPrice = mark.getLast();
     Instant now = Instant.now();
   
-    if ("TWAP".equalsIgnoreCase(order.getType())) {
-      return generateTwapFills(order, mark, now);
-    }
+
   
     BigDecimal matchingPrice = null;
     if ("LIMIT".equalsIgnoreCase(order.getType())) {
@@ -262,63 +340,7 @@ public class ExecutionService {
   }
   
   
-  /**
-   * Generates TWAP fills using synthetic liquidity (not matched against order book).
-   * TWAP orders are executed in slices over time using market price.
-   *
-   * @param order the TWAP order
-   * @param mark current market quote
-   * @param now current timestamp
-   * @return list of TWAP fills
-   */
 
-  private List<Fill> generateTwapFills(Order order, Quote mark, Instant now) {
-    List<Fill> fills = new ArrayList<>();
-    BigDecimal marketPrice = mark.getLast();
-  
-    int totalQty = order.getQty();
-
-    int numSlices;
-    if (totalQty >= 1000) {
-      numSlices = 10;
-    } else if (totalQty >= 100) {
-      numSlices = 5;
-    } else if (totalQty >= 50) {
-      numSlices = 2;
-    } else {
-      numSlices = 1;
-    }
-  
-    numSlices = Math.min(numSlices, 10);
-  
-    int baseSliceQty = totalQty / numSlices;
-    int remainder = totalQty % numSlices;
-  
-    int remainingQty = totalQty;
-  
-    for (int i = 0; i < numSlices && remainingQty > 0; i++) {
-      int sliceQty = baseSliceQty + (i < remainder ? 1 : 0);
-  
-      int afterSlice = matchAgainstBook(
-          order,
-          sliceQty,
-          null,          
-          marketPrice,
-          now,
-          fills
-      );
-  
-      int filledThisSlice = sliceQty - afterSlice;
-      remainingQty -= filledThisSlice;
-  
-      // No liquidity → stop TWAP early
-      if (filledThisSlice == 0) {
-        break;
-      }
-    }
-  
-    return fills;
-  }
   /**
    * Finds matching orders from the order book based on price-time priority.
    * 

@@ -9,6 +9,7 @@ import com.dev.tradingapi.repository.FillRepository;
 import java.math.BigDecimal;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -67,17 +68,26 @@ public class OrderService {
    * </ol>
    *
    * @param req order creation request
-   * @return persisted order with updated status and averages
+   * @return list of persisted orders (single order for non-TWAP, child orders for TWAP)
    */
-  public Order submit(CreateOrderRequest req) {
+  public List<Order> submit(CreateOrderRequest req) {
     // Delegate order creation and matching to the execution engine.
-    Order order = executionService.createOrder(req);
+    List<Order> orders = executionService.createOrder(req);
 
-    // Adjust account cash based on all fills for this order.
-    List<Fill> fills = fillRepository.findByOrderId(order.getId());
-    updateCashBalance(order.getAccountId(), order.getSide(), fills);
+    // Adjust account cash based on all fills for all orders.
+    // For TWAP, aggregate fills from all child orders
+    UUID accountId = orders.get(0).getAccountId();
+    String side = orders.get(0).getSide();
+    List<Fill> allFills = new ArrayList<>();
+    for (Order order : orders) {
+      List<Fill> fills = fillRepository.findByOrderId(order.getId());
+      if (fills != null) {
+        allFills.addAll(fills);
+      }
+    }
+    updateCashBalance(accountId, side, allFills);
 
-    return order;
+    return orders;
   }
 
   /**

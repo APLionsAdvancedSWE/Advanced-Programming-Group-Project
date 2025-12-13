@@ -2,18 +2,19 @@ package com.dev.tradingapi.integration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.dev.tradingapi.dto.AccountCreateRequest;
 import com.dev.tradingapi.dto.AccountCreateResponse;
 import com.dev.tradingapi.dto.CreateOrderRequest;
 import com.dev.tradingapi.model.Order;
+import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
@@ -66,13 +67,18 @@ class TradingApiHttpIntegrationTest {
     orderReq.setType("MARKET");
     orderReq.setTimeInForce("DAY");
 
-    ResponseEntity<Order> createOrderResp = restTemplate.postForEntity(
-        baseUrl("/orders"), orderReq, Order.class);
+    ResponseEntity<List<Order>> createOrderResp = restTemplate.exchange(
+        baseUrl("/orders"),
+        HttpMethod.POST,
+        new HttpEntity<>(orderReq),
+        new ParameterizedTypeReference<List<Order>>() {});
 
     assertEquals(HttpStatus.CREATED, createOrderResp.getStatusCode(),
         "Unexpected status when creating order: " + createOrderResp);
     assertNotNull(createOrderResp.getBody());
-    Order createdOrder = createOrderResp.getBody();
+    List<Order> orders = createOrderResp.getBody();
+    assertEquals(1, orders.size(), "MARKET order should return 1 order");
+    Order createdOrder = orders.get(0);
     assertEquals("IBM", createdOrder.getSymbol());
     // With the book-based engine and no opposing orders, the
     // first MARKET BUY will rest WORKING with zero fills.

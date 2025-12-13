@@ -144,7 +144,8 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals(10000, result.getQty());
@@ -224,7 +225,8 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("IOC", result.getTimeInForce());
@@ -300,27 +302,36 @@ class ExecutionServiceTest {
           return null;
         });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (5 slices of 20 each)
-    List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 5; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 20, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
+    // Mock fillRepository.findByOrderId to return fills for each child order
+    // Each child order has qty=20, so return fills totaling 20 for each
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      // Return fills that match a child order's quantity (20)
+      List<Fill> fills = new ArrayList<>();
+      fills.add(new Fill(UUID.randomUUID(), orderId, 20, 
+          new BigDecimal("152.00"), Instant.now()));
+      return fills;
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=100 -> numSlices=5, should return 5 child orders
+    assertNotNull(orders);
+    assertEquals(5, orders.size(), "TWAP order with qty=100 should create 5 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
-    assertEquals(100, result.getFilledQty());
-    assertEquals(100, result.getQty());
+    assertEquals(20, result.getFilledQty()); // Each child order has qty=20
+    assertEquals(20, result.getQty());
     // TWAP should use market price (152.00), not limit price
     assertEquals(new BigDecimal("152.00"), result.getAvgFillPrice());
     // TWAP creates multiple fills (slices) - verify it's reasonable (5 slices)
     verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class)); // 5 incoming + 5 resting
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (5) = 6 times
+    verify(marketService, times(6)).getQuote("AAPL");
   }
 
   /**
@@ -371,13 +382,34 @@ class ExecutionServiceTest {
         any(org.springframework.jdbc.core.RowMapper.class), any(Object[].class)))
         .thenReturn(matchingSellOrder);
     
-    // Mock fillRepository.findByOrderId to return TWAP fill (1 slice of 50)
-    Fill twapFill = new Fill(UUID.randomUUID(), UUID.randomUUID(), 50, 
-        new BigDecimal("152.00"), Instant.now());
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of(twapFill));
+    // Mock fillRepository.findByOrderId to return fills for each child order
+    // Return fills for child orders (not the matching order), with partial fill of 50
+    UUID matchingOrderId = matchingSellOrder.getId();
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      // Don't return fills for the matching order (it has its own fills)
+      if (orderId.equals(matchingOrderId)) {
+        // Return fills for the matching order (50 qty)
+        List<Fill> fills = new ArrayList<>();
+        fills.add(new Fill(UUID.randomUUID(), orderId, 50, 
+            new BigDecimal("152.00"), Instant.now()));
+        return fills;
+      } else {
+        // Return partial fill (50) for child orders that matched (qty=100, but only 50 available)
+        List<Fill> fills = new ArrayList<>();
+        fills.add(new Fill(UUID.randomUUID(), orderId, 50, 
+            new BigDecimal("152.00"), Instant.now()));
+        return fills;
+      }
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=1000 -> numSlices=10, should return 10 child orders (but only first one fills)
+    assertNotNull(orders);
+    assertEquals(10, orders.size(), "TWAP order with qty=1000 should create 10 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     assertEquals("PARTIALLY_FILLED", result.getStatus());
@@ -387,7 +419,8 @@ class ExecutionServiceTest {
     // TWAP stops early on insufficient liquidity - verify at least one fill was created
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(fillRepository, atMost(10)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (10) = 11 times
+    verify(marketService, times(11)).getQuote("AAPL");
   }
 
   /**
@@ -458,16 +491,23 @@ class ExecutionServiceTest {
           return null;
         });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (2 slices of 25 each)
-    List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 2; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 25, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
+    // Mock fillRepository.findByOrderId to return fills for each child order
+    // Each child order has qty=25, so return 1 fill of 25 for each
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      List<Fill> fills = new ArrayList<>();
+      fills.add(new Fill(UUID.randomUUID(), orderId, 25, 
+          new BigDecimal("152.00"), Instant.now()));
+      return fills;
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=50 -> numSlices=2, should return 2 child orders
+    assertNotNull(orders);
+    assertEquals(2, orders.size(), "TWAP order with qty=50 should create 2 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     // Should use market price (152.00), not limit price (140.00)
@@ -475,7 +515,8 @@ class ExecutionServiceTest {
     // TWAP creates fills - verify reasonable count (2 slices)
     verify(fillRepository, atLeast(1)).save(any(com.dev.tradingapi.model.Fill.class));
     verify(fillRepository, atMost(4)).save(any(com.dev.tradingapi.model.Fill.class)); // 2 incoming + 2 resting
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (2) = 3 times
+    verify(marketService, times(3)).getQuote("AAPL");
   }
 
   /**
@@ -542,21 +583,31 @@ class ExecutionServiceTest {
           return null;
         });
     
-    // Mock fillRepository.findByOrderId to return TWAP fill (1 slice of 10)
-    List<Fill> twapFills = new ArrayList<>();
-    twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 10, 
-        new BigDecimal("152.00"), Instant.now()));
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
+    // Mock fillRepository.findByOrderId to return fills for the child order
+    // Child order has qty=10, so return 1 fill of 10
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      List<Fill> fills = new ArrayList<>();
+      fills.add(new Fill(UUID.randomUUID(), orderId, 10, 
+          new BigDecimal("152.00"), Instant.now()));
+      return fills;
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=10 -> numSlices=1, should return 1 child order
+    assertNotNull(orders);
+    assertEquals(1, orders.size(), "TWAP order with qty=10 should create 1 child order");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
     assertEquals(10, result.getFilledQty());
     // Should create 1 slice - 1 incoming + 1 resting fill
     verify(fillRepository, times(2)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (1) = 2 times
+    verify(marketService, times(2)).getQuote("AAPL");
   }
 
   /**
@@ -626,23 +677,32 @@ class ExecutionServiceTest {
           return null;
         });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (10 slices of 100 each)
-    List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 10; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 100, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
+    // Mock fillRepository.findByOrderId to return fills for each child order
+    // Each child order has qty=100, so return 1 fill of 100 for each
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      List<Fill> fills = new ArrayList<>();
+      fills.add(new Fill(UUID.randomUUID(), orderId, 100, 
+          new BigDecimal("152.00"), Instant.now()));
+      return fills;
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=1000 -> numSlices=10, should return 10 child orders
+    assertNotNull(orders);
+    assertEquals(10, orders.size(), "TWAP order with qty=1000 should create 10 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
-    assertEquals(1000, result.getFilledQty());
+    assertEquals(100, result.getFilledQty()); // Each child order has qty=100
+    assertEquals(100, result.getQty());
     // Should create exactly 10 slices (capped at 10), each of 100 shares - 10 incoming + 10 resting fills
     verify(fillRepository, times(20)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (10) = 11 times
+    verify(marketService, times(11)).getQuote("AAPL");
   }
 
   /**
@@ -711,23 +771,32 @@ class ExecutionServiceTest {
           return null;
         });
     
-    // Mock fillRepository.findByOrderId to return TWAP fills (5 slices of 21 each)
-    List<Fill> twapFills = new ArrayList<>();
-    for (int i = 0; i < 5; i++) {
-      twapFills.add(new Fill(UUID.randomUUID(), UUID.randomUUID(), 21, 
-          new BigDecimal("152.00"), Instant.now().plusSeconds(i)));
-    }
-    when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(twapFills);
+    // Mock fillRepository.findByOrderId to return fills for each child order
+    // Each child order has qty=21, so return 1 fill of 21 for each
+    when(fillRepository.findByOrderId(any(UUID.class))).thenAnswer(invocation -> {
+      UUID orderId = invocation.getArgument(0);
+      List<Fill> fills = new ArrayList<>();
+      fills.add(new Fill(UUID.randomUUID(), orderId, 21, 
+          new BigDecimal("152.00"), Instant.now()));
+      return fills;
+    });
 
-    Order result = executionService.createOrder(request);
-
+    List<Order> orders = executionService.createOrder(request);
+    
+    // qty=105 -> numSlices=5, should return 5 child orders
+    assertNotNull(orders);
+    assertEquals(5, orders.size(), "TWAP order with qty=105 should create 5 child orders");
+    
+    Order result = orders.get(0);
     assertNotNull(result);
     assertEquals("TWAP", result.getType());
     assertEquals("FILLED", result.getStatus());
-    assertEquals(105, result.getFilledQty());
+    assertEquals(21, result.getFilledQty()); // Each child order has qty=21
+    assertEquals(21, result.getQty());
     // Should create 5 slices of 21 each - 5 incoming + 5 resting fills
     verify(fillRepository, times(10)).save(any(com.dev.tradingapi.model.Fill.class));
-    verify(marketService, times(1)).getQuote("AAPL");
+    // getQuote is called once for parent validation + once per child order (5) = 6 times
+    verify(marketService, times(6)).getQuote("AAPL");
   }
 
   /**
@@ -755,7 +824,8 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("FOK", result.getTimeInForce());
@@ -800,7 +870,8 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -849,7 +920,8 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -887,7 +959,8 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
@@ -1087,7 +1160,8 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no fills - LIMIT orders don't bootstrap)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -1132,7 +1206,8 @@ class ExecutionServiceTest {
     lenient().when(jdbcTemplate.queryForObject(anyString(), eq(Integer.class), any(Object[].class)))
         .thenReturn(1); // At least one SELL order exists in system
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("LIMIT", result.getType());
@@ -1171,7 +1246,8 @@ class ExecutionServiceTest {
     when(jdbcTemplate.query(anyString(), any(org.springframework.jdbc.core.RowMapper.class), 
         any(Object[].class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
@@ -1213,7 +1289,8 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertNotNull(result);
     assertEquals("MARKET", result.getType());
@@ -1321,7 +1398,8 @@ class ExecutionServiceTest {
     CreateOrderRequest buyRequest = new CreateOrderRequest(
         buyAccountId, "CLIENT-106", "AAPL", "BUY", 100, "LIMIT", 
         new BigDecimal("155.00"), "DAY");
-    Order buyOrder = executionService.createOrder(buyRequest);
+    List<Order> buyOrders = executionService.createOrder(buyRequest);
+    Order buyOrder = buyOrders.get(0);
 
     assertEquals("FILLED", buyOrder.getStatus());
     assertEquals(100, buyOrder.getFilledQty());
@@ -1368,7 +1446,8 @@ class ExecutionServiceTest {
     // Mock fillRepository.findByOrderId to return empty (no existing fills)
     lenient().when(fillRepository.findByOrderId(any(UUID.class))).thenReturn(List.of());
 
-    Order result = executionService.createOrder(request);
+    List<Order> orders = executionService.createOrder(request);
+    Order result = orders.get(0);
 
     assertEquals("WORKING", result.getStatus());
     assertEquals(0, result.getFilledQty());
