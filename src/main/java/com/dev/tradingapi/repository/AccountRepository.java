@@ -55,14 +55,15 @@ public class AccountRepository {
    * @param username login username
    * @param passwordHash hashed password for authentication
    * @param authToken API authentication token issued for the account
-     * @return the newly created {@link Account}
+   * @param initialBalance initial and starting cash balance
+   * @return the newly created {@link Account}
    */
-    public Account save(String name, String username, String passwordHash,
-            String authToken, BigDecimal initialBalance) {
+  public Account save(String name, String username, String passwordHash,
+                      String authToken, BigDecimal initialBalance) {
     UUID id = UUID.randomUUID();
     String sql = "INSERT INTO accounts (id, name, auth_token, username, password_hash,"
-        + " max_order_qty, max_notional, max_position_qty, initial_balance, cash_balance, created_at) "
-        + "VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, CURRENT_TIMESTAMP)";
+        + " max_order_qty, max_notional, max_position_qty, initial_balance, cash_balance,"
+        + " created_at) VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?, CURRENT_TIMESTAMP)";
     BigDecimal init = initialBalance != null ? initialBalance : BigDecimal.ZERO;
     jdbcTemplate.update(sql, id, name, authToken, username, passwordHash, init, init);
     return new Account(id, name, authToken, 0,

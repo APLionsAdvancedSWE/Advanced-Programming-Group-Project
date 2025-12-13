@@ -70,8 +70,8 @@ public class ExecutionService {
     // MARKET orders should not have a limitPrice (they execute at best available price)
     // LIMIT orders must have a limitPrice
     //  if ("MARKET".equalsIgnoreCase(req.getType()) && req.getLimitPrice() != null) {
-      // MARKET orders ignore limitPrice - set to null
-      // This is more forgiving than rejecting the order
+    //  MARKET orders ignore limitPrice - set to null
+    //  This is more forgiving than rejecting the order
     //  }
     if ("LIMIT".equalsIgnoreCase(req.getType()) && req.getLimitPrice() == null) {
       throw new IllegalArgumentException("LIMIT orders must specify a limitPrice");

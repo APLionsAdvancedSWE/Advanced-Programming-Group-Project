@@ -63,13 +63,13 @@ class AccountControllerTest {
 
     when(accountRepository.findByUsername("testuser1")).thenReturn(Optional.empty());
     when(accountRepository.save(anyString(), anyString(), anyString(), anyString(),
-      org.mockito.ArgumentMatchers.any(BigDecimal.class)))
+        org.mockito.ArgumentMatchers.any(BigDecimal.class)))
         .thenAnswer(invocation -> {
           UUID id = UUID.randomUUID();
           String name = invocation.getArgument(0);
           String username = invocation.getArgument(1);
           String authToken = invocation.getArgument(3);
-            return new com.dev.tradingapi.model.Account(id, name, authToken, 0,
+          return new com.dev.tradingapi.model.Account(id, name, authToken, 0,
               java.math.BigDecimal.ZERO, 0,
               java.time.Instant.now(), java.math.BigDecimal.ZERO,
               java.math.BigDecimal.ZERO);
@@ -100,7 +100,7 @@ class AccountControllerTest {
     }
 
     verify(accountRepository, never())
-      .save(anyString(), anyString(), anyString(), anyString(), any());
+        .save(anyString(), anyString(), anyString(), anyString(), any());
   }
 
   @Test
@@ -159,11 +159,11 @@ class AccountControllerTest {
     request.setPassword("password");
 
     when(accountRepository.findByUsername("existing"))
-      .thenReturn(Optional.of(new com.dev.tradingapi.model.Account(
-        UUID.randomUUID(), "Existing User", "api-key", 0,
-        java.math.BigDecimal.ZERO, 0,
-        java.time.Instant.now(), java.math.BigDecimal.ZERO,
-        java.math.BigDecimal.ZERO)));
+        .thenReturn(Optional.of(new com.dev.tradingapi.model.Account(
+            UUID.randomUUID(), "Existing User", "api-key", 0,
+            java.math.BigDecimal.ZERO, 0,
+            java.time.Instant.now(), java.math.BigDecimal.ZERO,
+            java.math.BigDecimal.ZERO)));
 
     try {
       accountController.createAccount(request);
@@ -172,7 +172,7 @@ class AccountControllerTest {
     }
 
     verify(accountRepository, never())
-      .save(anyString(), anyString(), anyString(), anyString(), any());
+        .save(anyString(), anyString(), anyString(), anyString(), any());
   }
 
   @Test

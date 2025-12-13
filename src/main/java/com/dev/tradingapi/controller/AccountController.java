@@ -68,10 +68,10 @@ public class AccountController {
    */
   @PostMapping("/create")
   public ResponseEntity<AccountCreateResponse> createAccount(
-          @RequestBody AccountCreateRequest request) {
+      @RequestBody AccountCreateRequest request) {
     if (request.getName() == null || request.getName().isBlank()
           || request.getUsername() == null || request.getUsername().isBlank()
-            || request.getPassword() == null || request.getPassword().isBlank()) {
+          || request.getPassword() == null || request.getPassword().isBlank()) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
               "Name, username, and password must be provided");
     }
@@ -83,20 +83,21 @@ public class AccountController {
 
     String passwordHash = hashPassword(request.getPassword());
 
-        String name = request.getName() != null && !request.getName().isBlank()
-          ? request.getName() : request.getUsername();
+    String name = request.getName() != null && !request.getName().isBlank()
+        ? request.getName() : request.getUsername();
 
-        BigDecimal initialBalance = request.getInitialBalance() != null
-          ? request.getInitialBalance()
-          : BigDecimal.ZERO;
+    BigDecimal initialBalance = request.getInitialBalance() != null
+        ? request.getInitialBalance()
+        : BigDecimal.ZERO;
 
     String authToken = UUID.randomUUID().toString();
 
     var account = accountService.createAccount(name, request.getUsername(),
-      passwordHash, initialBalance, authToken);
+        passwordHash, initialBalance, authToken);
 
     return ResponseEntity.status(HttpStatus.CREATED)
-    .body(new AccountCreateResponse(account.getId(), name, request.getUsername(), authToken));
+        .body(new AccountCreateResponse(account.getId(), name,
+            request.getUsername(), authToken));
   }
 
   /**
